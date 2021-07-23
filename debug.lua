@@ -17,6 +17,52 @@ if not log then
 end
 
 
+function toktostring(tok)
+  if tok == 0 then
+    return "TOK_VOID"
+  elseif tok == 1 then
+      return "TOK_WORD"
+  elseif tok == 2 then
+      return "TOK_VAR"
+  elseif tok == 3 then
+      return "TOK_OPENPAREN"
+  elseif tok == 4 then
+      return "TOK_CLOSEPAREN"
+  elseif tok == 7 then
+      return "TOK_STRING"
+  elseif tok == 8 then
+      return "TOK_COMMENT"
+  elseif tok == 9 then
+      return "TOK_NUMBER"
+  elseif tok == 10 then
+      return "TOK_OPERATOR"
+  elseif tok == 11 then
+      return "TOK_OCCURRENCEINDICATOR"
+  elseif tok == 12 then
+      return "TOK_OPENBRACKET"
+  elseif tok == 13 then
+      return "TOK_CLOSEBRACKET"
+  end
+end
+
+do
+  local level = 0
+  function enterStep(infotbl,where)
+    local nexttok = infotbl.peek()
+    nexttok = nexttok or {0,""}
+    w("%s%s (next: %s|%q)",string.rep(" ",level), where,toktostring(nexttok[1]),nexttok[2])
+    level = level + 1
+  end
+
+  function leaveStep(infotbl,where)
+    local nexttok = infotbl.peek()
+    level = level - 1
+    nexttok = nexttok or {0,""}
+    w("%s%s..done (next: %s|%q)",string.rep(" ",level),where,toktostring(nexttok[1]),nexttok[2])
+  end
+end
+
+
 do
   tables_printed = {}
   function printtable (ind,tbl_to_print,level)
