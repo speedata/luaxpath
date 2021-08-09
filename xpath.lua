@@ -1,35 +1,21 @@
 dofile("debug.lua")
 
+
+module(...,package.seeall)
+
 stringreader = require("stringreader")
 
-local str = [[abc(: as(: bla :)dfsd ):  :) / de // f]]
-local str = ""
-local str = [=[abc [ def ]]=]
-local str = [=[5.24]=]
-local str = [=[4 +-+-+-+-+-+ 1]=]
-local str = [[if-3d  ($a-3 = 123) then äbc else 'en "d' "e'nd"]]
-local str = [=[abc * def != fff = 5 < 3 << 5 | >>> ? @ val ]=]
-str = [=[if ( 1 = 1 ) then true() else false()]=]
-str = "schema-element"
-str = ".."
-str = "for $i in "
-str = "$a castable as"
-str = "//sales[not(. castable as xs:decimal)]"
-str = ". instance of element(*, gml:CoordinateSystemAxisType)"
-str = [[if (doc("inv.xml") instance of document-node(schema-element(mf:invoice)))]]
-str = "1 instance of element()?"
-str = [=[  if ("a" = "b") then "x" else "y"]=]
-str = "*:foo"
-str = "foo:*"
-str = [=[abc * def != fff = 5 < 3 << 5 | >>> ? @ val ]=]
-str = [=[(1,1) $varname  ]=]
-str = [=[(1 to 100)[. mod 5 eq 0] ]=]
-str = [=[ns:funcall(ab:funcall2(a,b),c)]=]
-str = [=[]=]
-str = [=[foo:bar("a","b")]=]
-str = [=[position() = 1]=]
 
-local sr = stringreader:new(str)
+local round = function(a, prec)
+    return math.floor(a + 0.5*prec) -- where prec is 10^n, starting at 0
+end
+
+local xpathfunctions = {}
+
+local function register(ns,name,fun)
+    xpathfunctions[ns] = xpathfunctions[ns] or {}
+    xpathfunctions[ns][name] = fun
+end
 
 local match = unicode.utf8.match
 
@@ -139,159 +125,39 @@ local TOK_OPERATOR = 10
 local TOK_OCCURRENCEINDICATOR = 11
 local TOK_OPENBRACKET = 12
 local TOK_CLOSEBRACKET = 13
-
-local tokenlist = {}
-
-local toks = {}
-local tok
-while true do
-    if sr:eof() then
-        break
-    end
-    local c = sr:peek()
-    if match(c, "%a") then
-        tok = get_word(sr)
-        table.insert(tokenlist, {TOK_WORD, tok})
-    elseif match(c, "%(") then
-        sr:getc()
-        c = sr:peek()
-        if c == ":" then
-            tok = get_comment()
-            table.insert(tokenlist, {TOK_COMMENT, tok})
-        else
-            table.insert(tokenlist, {TOK_OPENPAREN, "("})
-        end
-    elseif match(c, "%[") then
-        sr:getc()
-        table.insert(tokenlist, {TOK_OPENBRACKET, "["})
-    elseif match(c, "%]") then
-        sr:getc()
-        table.insert(tokenlist, {TOK_CLOSEBRACKET, "]"})
-    elseif match(c, "%)") then
-        sr:getc()
-        table.insert(tokenlist, {TOK_CLOSEPAREN, ")"})
-    elseif match(c, "%d") then
-        tok = get_num(sr)
-        table.insert(tokenlist, {TOK_NUMBER, tok})
-    elseif match(c, "%$") then
-        sr:getc()
-        tok = get_word(sr)
-        table.insert(tokenlist, {TOK_VAR, tok})
-    elseif match(c, "[,=/>[<-*!+|?@%]]") then
-        -- ',', =, >=, >>, >, [, <=, <<, <, -, *, !=, +, //, /, |
-        local op = sr:getc()
-
-        if op == "/" and sr:peek() == "/" then
-            op = "//"
-            sr:getc()
-        elseif op == "<" and sr:peek() == "<" then
-            op = "<<"
-            sr:getc()
-        elseif op == ">" and sr:peek() == ">" then
-            op = ">>"
-            sr:getc()
-        elseif op == ">" and sr:peek() == "=" then
-            op = ">="
-            sr:getc()
-        elseif op == "<" and sr:peek() == "=" then
-            op = "<="
-            sr:getc()
-        elseif op == "!" and sr:peek() == "=" then
-            op = "!="
-            sr:getc()
-        elseif op == "." and sr:peek() == "." then
-            op = ".."
-            sr:getc()
-        end
-        table.insert(tokenlist, {TOK_OPERATOR, op})
-    elseif match(c, "'") or match(c, '"') then
-        tok = get_delimited_string(sr)
-        table.insert(tokenlist, {TOK_STRING, tok})
-    elseif match(c, "%s") then
-        space(sr)
-    else
-        w("unhandled token %q", c)
-        break
-    end
-end
-
-printtable("tokenlist", tokenlist)
-
-function plusfunc(a, b)
-    return a + b
-end
-
-constantQueryMt = {
-    __index = function(tbl, key)
-        if key == "typ" then
-            return "constantQuery"
-        elseif key == "evaluate" then
-            return function()
-                w("evaluate constantQuery")
-                return rawget(tbl, "val")
-            end
-        end
-    end
-}
-
-numericQueryMt = {
-    __index = function(tbl, key)
-        if key == "typ" then
-            return "numericQuery"
-        elseif key == "evaluate" then
-            return function()
-                w("evaluate numericQuery")
-                local f = rawget(tbl, "func")
-                local left = rawget(tbl, "left").evaluate()
-                local right = rawget(tbl, "right").evaluate()
-                return f(left, right)
-            end
-        end
-    end
-}
-
-exprQueryMt = {
-    __index = function(tbl, key)
-        if key == "typ" then
-            return "exprQuery"
-        elseif key == "evaluate" then
-            return function(ctx)
-                w("evaluate exprQuery")
-                local exprSingle = rawget(tbl, "exprSingle")
-                local ret = {}
-                for i = 1, #exprSingle do
-                    ret[#ret + 1] = exprSingle[i].evaluate()
-                end
-                return ret
-            end
-        end
-    end
-}
-
+local TOK_QNAME = 14
+local TOK_NCNAME = 15
 
 -- [2] Expr ::= ExprSingle ("," ExprSingle)*
 function parseExpr(infotbl)
     enterStep(infotbl,"2 parseExpr")
-    parseExprSingle(infotbl)
+    local ret = {}
+    ret[#ret + 1] = parseExprSingle(infotbl)
     while true do
         local nt = infotbl.peek()
         if nt and nt[2] == "," then
             infotbl.skip(",")
-            parseExprSingle(infotbl)
+            ret[#ret + 1] = parseExprSingle(infotbl)
         else
             break
         end
     end
-    -- local ret = parseAdditiveExpr(infotbl)
-    -- local q = setmetatable({exprSingle = {ret} }, exprQueryMt)
-    -- return q
     leaveStep(infotbl,"2 parseExpr")
+    if #ret == 1 then return ret[1] end
+    return function(ctx)
+        local new = {}
+        for i = 1, #ret do
+            table.insert(new,ret[i](ctx))
+        end
+        return new
+    end
 end
 
 -- [3] ExprSingle ::= ForExpr | QuantifiedExpr | IfExpr | OrExpr
 function parseExprSingle(infotbl)
     enterStep(infotbl,"3 parseExprSinge")
     local nexttok = infotbl.peek()
+    local ret
     if nexttok then
         local nexttoktype = nexttok[1]
         local nexttokvalue = nexttok[2]
@@ -302,10 +168,11 @@ function parseExprSingle(infotbl)
         elseif nexttokvalue == "if" then
             parseIfExpr(infotbl)
         else
-            parseOrExpr(infotbl)
+            ret = parseOrExpr(infotbl)
         end
     end
     leaveStep(infotbl,"3 parseExprSinge")
+    return ret
 end
 
 -- [7] IfExpr ::= "if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
@@ -329,146 +196,216 @@ end
 -- [8] OrExpr ::= AndExpr ( "or" AndExpr )*
 function parseOrExpr(infotbl)
     enterStep(infotbl,"8 parseOrExpr")
-    parseAndExpr(infotbl)
+    local ret = parseAndExpr(infotbl)
     local nexttok = infotbl.peek()
     if nexttok then
         local nexttokvalue = nexttok[2]
     end
     leaveStep(infotbl,"8 parseOrExpr")
+    return ret
 end
 
 -- [9] AndExpr ::= ComparisonExpr ( "and" ComparisonExpr )*
 function parseAndExpr(infotbl)
     enterStep(infotbl,"9 parseAndExpr")
-    parseComparisonExpr(infotbl)
+    local ret = parseComparisonExpr(infotbl)
     -- while ...
     leaveStep(infotbl,"9 parseAndExpr")
+    return ret
 end
 
 -- [10] ComparisonExpr ::= RangeExpr ( (ValueComp | GeneralComp| NodeComp) RangeExpr )?
 function parseComparisonExpr(infotbl)
     enterStep(infotbl,"10 parseComparisonExpr")
-    parseRangeExpr(infotbl)
+    local ret = parseRangeExpr(infotbl)
     local nexttok = infotbl.peek()
-    if op then
+    if nexttok then
         local op = nexttok[2]
-        -- [23]   	ValueComp	   ::=   	"eq" | "ne" | "lt" | "le" | "gt" | "ge"
-        -- [22]   	GeneralComp	   ::=   	"=" | "!=" | "<" | "<=" | ">" | ">="
-        -- [24]   	NodeComp	   ::=   	"is" | "<<" | ">>"
-        if op == "eq" or op == "ne" or op == "lt" or op == "le" or op == "gt" or op == "ge" or op == "=" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=" or op == "is" or op == "<<" or op == ">>" then
-            w("comparison")
-            _ = infotbl.nexttok
-            parseRangeExpr(infotbl)
+        if op then
+            -- [23] ValueComp	   ::= "eq" | "ne" | "lt" | "le" | "gt" | "ge"
+            -- [22] GeneralComp	   ::= "=" | "!=" | "<" | "<=" | ">" | ">="
+            -- [24] NodeComp	   ::= "is" | "<<" | ">>"
+            if op == "eq" or op == "ne" or op == "lt" or op == "le" or op == "gt" or op == "ge" or op == "=" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=" or op == "is" or op == "<<" or op == ">>" then
+                _ = infotbl.nexttok
+                parseRangeExpr(infotbl)
+            end
         end
     end
     leaveStep(infotbl,"10 parseComparisonExpr")
+    return ret
 end
 
 -- [11]   	RangeExpr  ::=  AdditiveExpr ( "to" AdditiveExpr )?
 function parseRangeExpr(infotbl)
     enterStep(infotbl,"11 parseRangeExpr")
-    parseAdditiveExpr(infotbl)
+    local ret = parseAdditiveExpr(infotbl)
+    while true do
+        local nt = infotbl.peek()
+        if nt and nt[2] == "to" then
+            _ = infotbl.nexttok
+            parseAdditiveExpr(infotbl)
+        else
+            break
+        end
+    end
     leaveStep(infotbl,"11 parseRangeExpr")
-    -- check for "to", if yes, parse another additiveExpr
+    return ret
 end
 
 -- [12]	AdditiveExpr ::= MultiplicativeExpr ( ("+" | "-") MultiplicativeExpr )*
 function parseAdditiveExpr(infotbl)
     enterStep(infotbl,"12 parseAdditiveExpr")
-    local left, right
-    left = parseMultiplicativeExpr(infotbl)
-    local operator = infotbl.peek()
-    if operator then
+    local tbl = {}
+    tbl[#tbl + 1] = parseMultiplicativeExpr(infotbl)
+    while true do
+        local operator = infotbl.peek()
+        if not operator then break end
         if operator[2] == "+" or operator[2] == "-" then
-            w("+ or -")
+            tbl[#tbl + 1] = operator[2]
             local op = infotbl.nexttok
-            right = parseMultiplicativeExpr(infotbl)
+            tbl[#tbl + 1] = parseMultiplicativeExpr(infotbl)
+        else
+            break
         end
-        local q = setmetatable({left = left, right = right, func = plusfunc}, numericQueryMt)
     end
     leaveStep(infotbl,"12 parseAdditiveExpr")
-    return q
+    return function(ctx)
+        local cur
+        cur = tbl[1](ctx)
+        local i = 1
+        while i < #tbl do
+            if tbl[i+1] == "+" then
+                cur = cur + tbl[i+2](ctx)
+            else
+                cur = cur - tbl[i+2](ctx)
+            end
+            i = i + 2
+        end
+        return cur
+    end
 end
 
 -- [13]	MultiplicativeExpr ::= 	UnionExpr ( ("*" | "div" | "idiv" | "mod") UnionExpr )*
 function parseMultiplicativeExpr(infotbl)
     enterStep(infotbl,"13 parseMultiplicativeExpr")
-    parseUnionExpr(infotbl)
+
+    local tbl = {}
+    tbl[#tbl + 1] = parseUnionExpr(infotbl)
+    while true do
+        local operator = infotbl.peek()
+        if operator == nil then break end
+        if operator[2] == "*" or operator[2] == "div" or operator[2] == "idiv" or operator[2] == "mod" then
+                tbl[#tbl + 1] = operator[2]
+                local op = infotbl.nexttok
+                tbl[#tbl + 1] = parseUnionExpr(infotbl)
+        else
+            break
+        end
+    end
     leaveStep(infotbl,"13 parseMultiplicativeExpr")
-    return setmetatable({val = nil}, constantQueryMt)
+    return function(ctx)
+        local cur
+        cur = tbl[1](ctx)
+        local i = 1
+        while i < #tbl do
+            if tbl[i+1] == "*" then
+                cur = cur * tbl[i+2](ctx)
+            elseif tbl[i+1] == "div" then
+                cur = cur / tbl[i+2](ctx)
+            elseif tbl[i+1] == "idiv" then
+                cur = round(cur / tbl[i+2](ctx),0)
+            elseif tbl[i+1] == "mod" then
+                cur = cur % tbl[i+2](ctx)
+            end
+            i = i + 2
+        end
+        return cur
+    end
 end
 
--- [14]   	UnionExpr	   ::=  IntersectExceptExpr ( ("union" | "|") IntersectExceptExpr )*
+-- [14] UnionExpr ::= IntersectExceptExpr ( ("union" | "|") IntersectExceptExpr )*
 function parseUnionExpr(infotbl)
     enterStep(infotbl,"14 parseUnionExpr")
-    parseIntersectExceptExpr(infotbl)
+    local ret
+    ret = parseIntersectExceptExpr(infotbl)
     -- while...
     -- check for "union" or "|" then parse another IntersectExceptExpr
     leaveStep(infotbl,"14 parseUnionExpr")
+    return ret
 end
 
 -- [15]	IntersectExceptExpr	 ::= InstanceofExpr ( ("intersect" | "except") InstanceofExpr )*
 function parseIntersectExceptExpr(infotbl)
     enterStep(infotbl,"15 parseIntersectExceptExpr")
-    parseInstanceofExpr(infotbl)
+    local ret
+    ret = parseInstanceofExpr(infotbl)
     -- while...
     -- check for "intersect" or "except" then parse another InstanceofExpr
     leaveStep(infotbl,"15 parseIntersectExceptExpr")
+    return ret
 end
 
--- [16]   	InstanceofExpr	   ::=   	TreatExpr ( "instance" "of" SequenceType )?
+-- [16] InstanceofExpr ::= TreatExpr ( "instance" "of" SequenceType )?
 function parseInstanceofExpr(infotbl)
     enterStep(infotbl,"16 parseInstanceofExpr")
-    parseTreatExpr(infotbl)
+    local ret = parseTreatExpr(infotbl)
     leaveStep(infotbl,"16 parseInstanceofExpr")
+    return ret
 end
 
--- [17]   	TreatExpr	   ::=   	CastableExpr ( "treat" "as" SequenceType )?
+-- [17] TreatExpr ::= CastableExpr ( "treat" "as" SequenceType )?
 function parseTreatExpr(infotbl)
     enterStep(infotbl,"17 parseTreatExpr")
-    parseCastableExpr(infotbl)
+    local ret = parseCastableExpr(infotbl)
     leaveStep(infotbl,"17 parseTreatExpr")
+    return ret
 end
 
--- [18]   	CastableExpr	   ::=   	CastExpr ( "castable" "as" SingleType )?
+-- [18] CastableExpr ::= CastExpr ( "castable" "as" SingleType )?
 function parseCastableExpr(infotbl)
     enterStep(infotbl,"18 parseCastableExpr")
-    parseCastExpr(infotbl)
+    local ret = parseCastExpr(infotbl)
     leaveStep(infotbl,"18 parseCastableExpr")
+    return ret
 end
 
--- [19]   	CastExpr	   ::=   	UnaryExpr ( "cast" "as" SingleType )?
+-- [19] CastExpr ::= UnaryExpr ( "cast" "as" SingleType )?
 function parseCastExpr(infotbl)
     enterStep(infotbl,"19 parseCastExpr")
-    parseUnaryExpr(infotbl)
+    local ret = parseUnaryExpr(infotbl)
     leaveStep(infotbl,"19 parseCastExpr")
+    return ret
 end
 
--- [20] UnaryExpr  ::=	("-" | "+")* ValueExpr
+-- [20] UnaryExpr ::= ("-" | "+")* ValueExpr
 function parseUnaryExpr(infotbl)
     enterStep(infotbl,"20 parseUnaryExpr")
-    parseValueExpr(infotbl)
+    local ret = parseValueExpr(infotbl)
     leaveStep(infotbl,"20 parseUnaryExpr")
+    return ret
 end
 
--- [21]	ValueExpr	   ::=   	PathExpr
+-- [21]	ValueExpr ::= PathExpr
 function parseValueExpr(infotbl)
     enterStep(infotbl,"21 parseValueExpr")
-    parsePathExpr(infotbl)
+    local ret = parsePathExpr(infotbl)
     leaveStep(infotbl,"21 parseValueExpr")
+    return ret
 end
 
--- [25]   	PathExpr  ::= 	("/" RelativePathExpr?) | ("//" RelativePathExpr) | RelativePathExpr
+-- [25] PathExpr ::= ("/" RelativePathExpr?) | ("//" RelativePathExpr) | RelativePathExpr
 function parsePathExpr(infotbl)
     enterStep(infotbl,"25 parsePathExpr")
-    parseRelativePathExpr(infotbl)
+    local ret = parseRelativePathExpr(infotbl)
     leaveStep(infotbl,"25 parsePathExpr")
+    return ret
 end
 
--- [26]   	RelativePathExpr ::= StepExpr (("/" | "//") StepExpr)*
+-- [26] RelativePathExpr ::= StepExpr (("/" | "//") StepExpr)*
 function parseRelativePathExpr(infotbl)
     enterStep(infotbl,"26 parseRelativePathExpr")
-    parseStepExpr(infotbl)
+    local ret
+    ret = parseStepExpr(infotbl)
     while true do
         local nt = infotbl.peek()
         if not nt then
@@ -482,8 +419,8 @@ function parseRelativePathExpr(infotbl)
         end
     end
     leaveStep(infotbl,"26 parseRelativePathExpr")
+    return ret
 end
-
 
 -- 27 StepExpr := FilterExpr | AxisStep
 function parseStepExpr(infotbl)
@@ -496,21 +433,126 @@ function parseStepExpr(infotbl)
     return ret
 end
 
--- 28 	AxisStep ::= (ReverseStep | ForwardStep) PredicateList
+
+-- [28] AxisStep ::= (ReverseStep | ForwardStep) PredicateList
 function parseAxisStep(infotbl)
     enterStep(infotbl,"28 parseAxisStep")
+    ret = parseReverseStep(infotbl)
+    if not ret then
+        ret = parseForwardStep(infotbl)
+    end
     parsePredicateList(infotbl)
     leaveStep(infotbl,"28 parseAxisStep")
-    return nil
+    return ret
 end
 
+-- [29] ForwardStep ::= (ForwardAxis NodeTest) | AbbrevForwardStep
+function parseForwardStep(infotbl)
+    enterStep(infotbl,"29 parseForwardStep")
+    local ret = parseForwardAxis(infotbl)
+    if ret then
+        ret = parseNodeTest(infotbl)
+    else
+        local nt = infotbl.peek()
+        -- AbbrevForwardStep == "@"? NodeTest
+        if nt and nt[2] == "@" then
+            _ = infotbl.nexttok
+        end
+        ret = parseNodeTest(infotbl)
+    end
+    leaveStep(infotbl,"29 parseForwardStep")
+    return ret
+end
+
+-- [30] ForwardAxis ::= ("child" "::") | ("descendant" "::")| ("attribute" "::")| ("self" "::")| ("descendant-or-self" "::")| ("following-sibling" "::")| ("following" "::")| ("namespace" "::")
+function parseForwardAxis(infotbl)
+    enterStep(infotbl,"30 parseForwardAxis")
+    local nt = infotbl.peek()
+    local nt = infotbl.peek()
+    local nt2 = infotbl.peek(2)
+    local ret
+    if nt and nt2 then
+        local opname = nt[2]
+        local doublecolon = nt2[2]
+        if doublecolon == "::" and ( opname == "child" or opname == "descendant" or opname == "attribute" or opname == "self" or opname == "descendant-or-self" or opname ==  "following-sibling" or opname == "following" or opname == "namespace" ) then
+            w("forward step")
+            _ = infotbl.nexttok
+            _ = infotbl.nexttok
+            ret = {}
+        end
+    end
+    leaveStep(infotbl,"30 parseForwardAxis")
+end
+
+-- [32] ReverseStep ::= (ReverseAxis NodeTest) | AbbrevReverseStep
+-- [34] AbbrevReverseStep ::= ".."
+function parseReverseStep(infotbl)
+    enterStep(infotbl,"32 parseReverseStep")
+    local ret = parseReverseAxis(infotbl)
+    if ret then
+        ret = parseNodeTest(infotbl)
+    else
+        local nt = infotbl.peek()
+        if nt and nt[2] == ".." then
+            ret = {}
+        end
+    end
+    leaveStep(infotbl,"32 parseReverseStep")
+    return ret
+end
+
+-- [33] ReverseAxis ::= ("parent" "::") | ("ancestor" "::") | ("preceding-sibling" "::") | ("preceding" "::") | ("ancestor-or-self" "::")
+function parseReverseAxis(infotbl)
+    enterStep(infotbl,"33 parseReverseAxis")
+    local nt = infotbl.peek()
+    local nt2 = infotbl.peek(2)
+    local ret
+    if nt and nt2 then
+        local opname = nt[2]
+        local doublecolon = nt2[2]
+        if doublecolon == "::" and ( opname == "parent" or opname == "ancestor" or opname == "preceding-sibling" or opname == "preceding" or opname == "ancestor-or-self" ) then
+            w("reversestep")
+            _ = infotbl.nexttok
+            _ = infotbl.nexttok
+            ret = {}
+        end
+    end
+    leaveStep(infotbl,"33 parseReverseAxis")
+    return ret
+end
+
+-- [35] NodeTest ::= KindTest | NameTest
+function parseNodeTest(infotbl)
+    enterStep(infotbl,"35 parseNodeTest")
+    local ret
+    ret = parseKindTest(infotbl)
+    if not ret then
+        ret = parseNameTest(infotbl)
+    end
+    leaveStep(infotbl,"35 parseNodeTest")
+    return ret
+end
+
+-- [36] NameTest ::= QName | Wildcard
+function parseNameTest(infotbl)
+    enterStep(infotbl,"36 parseNameTest")
+    local nt = infotbl.peek()
+    if nt and ( nt[1] == TOK_QNAME or nt[1] == TOK_NCNAME ) then
+        _ = infotbl.nexttok
+        return true
+    end
+    leaveStep(infotbl,"36 parseNameTest")
+end
+-- [37]	Wildcard ::= "*" | (NCName ":" "*") | ("*" ":" NCName)
 
 -- [38]	FilterExpr ::= PrimaryExpr PredicateList
 function parseFilterExpr(infotbl)
     enterStep(infotbl,"38 parseFilterExpr")
-    local ret = {}
-    ret[#ret + 1] = parsePrimaryExpr(infotbl)
-    parsePredicateList(infotbl)
+    local ret
+    ret = parsePrimaryExpr(infotbl)
+    if ret and not infotbl.eof then
+        parsePredicateList(infotbl)
+    end
     leaveStep(infotbl,"38 parseFilterExpr")
     return ret
 end
@@ -547,20 +589,27 @@ function parsePrimaryExpr(infotbl)
     local nexttok = infotbl.peek()
     local nexttoktype = nexttok[1]
     local nexttokvalue = nexttok[2]
-    local ret = {}
-    if nexttoktype == TOK_STRING or nexttoktype == TOK_NUMBER then
-        ret[#ret + 1] = infotbl.nexttok
+    local ret
+    if nexttoktype == TOK_STRING then
+        local nexttok = infotbl.nexttok[2]
+        ret = function() return nexttok end
+    elseif nexttoktype == TOK_NUMBER then
+        local nexttok = infotbl.nexttok[2]
+        ret = function() return tonumber(nexttok) end
     elseif nexttoktype == TOK_VAR then
-        w("var")
+        local varname = infotbl.nexttok[2]
+        return function(ctx) return ctx[varname] end
     elseif nexttoktype == TOK_OPENPAREN then
-        parseParenthesizedExpr(infotbl)
+        return parseParenthesizedExpr(infotbl)
     elseif nexttoktype == TOK_OPERATOR and nexttokvalue == "." then
         w("context item")
-    elseif nexttoktype == TOK_WORD and infotbl.peek(2)[1] == TOK_OPENPAREN then
-        w("funcall")
-        parseFunctionCall(infotbl)
+    elseif nexttoktype == TOK_QNAME or nexttoktype == TOK_NCNAME then
+        local op = infotbl.peek(2)
+        if op and op[1] == TOK_OPENPAREN then
+            ret = parseFunctionCall(infotbl)
+        end
     else
-        -- w("unknown token")
+        w("unknown token")
     end
     leaveStep(infotbl,"41 parsePrimaryExpr")
     return ret
@@ -571,9 +620,11 @@ end
 function parseParenthesizedExpr(infotbl)
     enterStep(infotbl,"46 parseParenthesizedExpr")
     infotbl.skiptoken(TOK_OPENPAREN)
-    parseExpr(infotbl)
+    local ret = parseExpr(infotbl)
     infotbl.skiptoken(TOK_CLOSEPAREN)
     leaveStep(infotbl,"46 parseParenthesizedExpr")
+
+    return ret
 end
 
 -- [48] FunctionCall ::= QName "(" (ExprSingle ("," ExprSingle)*)? ")"
@@ -582,13 +633,14 @@ function parseFunctionCall(infotbl)
     local fname = infotbl.nexttok[2]
     w("fname %s",tostring(fname))
     infotbl.skiptoken(TOK_OPENPAREN)
-    parseExprSingle(infotbl)
+    local args = {}
+    args[#args + 1] = parseExprSingle(infotbl)
     while true do
         local nt = infotbl.peek()
         if nt then
             if nt[2] == "," then
                 infotbl.skip(",")
-                parseExprSingle(infotbl)
+                args[#args + 1] = parseExprSingle(infotbl)
             else
                 break
             end
@@ -598,18 +650,80 @@ function parseFunctionCall(infotbl)
         end
     end
     infotbl.skip(")")
+    local f = xpathfunctions[""][fname]
     leaveStep(infotbl,"48 parseFunctionCall")
+    return function(ctx) return f(ctx, args) end
 end
 
-function parse(infotbl)
-    w("parse")
-    parseExpr(infotbl)
+
+-- [53] AtomicType ::= QName
+
+-- [54] KindTest ::= DocumentTest| ElementTest| AttributeTest| SchemaElementTest| SchemaAttributeTest| PITest| CommentTest| TextTest| AnyKindTest
+function parseKindTest(infotbl)
+    enterStep(infotbl,"54 parseKindTest")
+    leaveStep(infotbl,"54 parseKindTest")
 end
 
-infotbl = {
-    tokenlist = tokenlist,
-    pos = 1
-}
+-- [56] DocumentTest ::= "document-node" "(" (ElementTest | SchemaElementTest)? ")"
+function parseDocumentTest(infotbl)
+    enterStep(infotbl,"56 parseDocumentTest")
+    leaveStep(infotbl,"56 parseDocumentTest")
+end
+
+-- [59] PITest ::= "processing-instruction" "(" (NCName | StringLiteral)? ")"
+function parsePITest(infotbl)
+    enterStep(infotbl,"59 parsePITest")
+    leaveStep(infotbl,"59 parsePITest")
+end
+
+-- [60] AttributeTest ::= "attribute" "(" (AttribNameOrWildcard ("," QName)?)? ")"
+function parseAttributeTest(infotbl)
+    enterStep(infotbl,"54 parseAttributeTest")
+    leaveStep(infotbl,"54 parseAttributeTest")
+end
+
+-- [62] SchemaAttributeTest ::= "schema-attribute" "(" AttributeDeclaration ")"
+function parseSchemaAttributeTest(infotbl)
+    enterStep(infotbl,"54 parseSchemaAttributeTest")
+    leaveStep(infotbl,"54 parseSchemaAttributeTest")
+end
+
+-- [63] AttributeDeclaration ::= AttributeName
+function parseKindTest(infotbl)
+    enterStep(infotbl,"54 parseKindTest")
+    leaveStep(infotbl,"54 parseKindTest")
+end
+
+-- [64] ElementTest ::= "element" "(" (ElementNameOrWildcard ("," QName "?"?)?)? ")"
+function parseElementTest(infotbl)
+    enterStep(infotbl,"64 parseElementTest")
+    leaveStep(infotbl,"64 parseElementTest")
+end
+
+-- [65] ElementNameOrWildcard ::= ElementName | "*"
+function parseKindTest(infotbl)
+    enterStep(infotbl,"54 parseKindTest")
+    leaveStep(infotbl,"54 parseKindTest")
+end
+
+-- [66] SchemaElementTest ::= "schema-element" "(" QName ")"
+function parseSchemaElementTest(infotbl)
+    enterStep(infotbl,"66 parseSchemaElementTest")
+    leaveStep(infotbl,"66 parseSchemaElementTest")
+end
+
+
+-- [69] ElementName ::= QName
+
+-- [61] AttribNameOrWildcard ::= AttributeName | "*"
+-- [68] AttributeName ::= QName
+-- [70] TypeName ::= QName
+
+
+-- [58] CommentTest ::= "comment" "(" ")"
+-- [57] TextTest ::= "text" "(" ")"
+-- [55] AnyKindTest ::= "node" "(" ")"
+
 
 infomt = {
     __index = function(tbl, key)
@@ -636,11 +750,113 @@ infomt = {
                     w("parse error, expect %s, got %s",toktostring(n), toktostring(tok[1]))
                 end
             end
+        elseif key == "eof" then
+            return tbl.pos >= #tbl.tokenlist
         else
             return rawget(tbl, key)
         end
     end
 }
-setmetatable(infotbl, infomt)
 
-parse(infotbl)
+function parse(str)
+    local sr = stringreader:new(str)
+    local tokenlist = {}
+    local infotbl = {
+        tokenlist = tokenlist,
+        pos = 1
+    }
+    setmetatable(infotbl, infomt)
+
+    local toks = {}
+    local tok
+    while true do
+        if sr:eof() then
+            break
+        end
+        local c = sr:peek()
+        local c2 = sr:peek(2)
+        if match(c, "%a") then
+            tok = get_word(sr)
+            if string.match(tok,":") then
+                table.insert(tokenlist, {TOK_QNAME, tok})
+            else
+                table.insert(tokenlist, {TOK_NCNAME, tok})
+            end
+        elseif match(c, "%(") then
+            sr:getc()
+            c = sr:peek()
+            if c == ":" then
+                tok = get_comment()
+                table.insert(tokenlist, {TOK_COMMENT, tok})
+            else
+                table.insert(tokenlist, {TOK_OPENPAREN, "("})
+            end
+        elseif match(c, "%[") then
+            sr:getc()
+            table.insert(tokenlist, {TOK_OPENBRACKET, "["})
+        elseif match(c, "%]") then
+            sr:getc()
+            table.insert(tokenlist, {TOK_CLOSEBRACKET, "]"})
+        elseif match(c, "%)") then
+            sr:getc()
+            table.insert(tokenlist, {TOK_CLOSEPAREN, ")"})
+        elseif match(c, "%d") then
+            tok = get_num(sr)
+            table.insert(tokenlist, {TOK_NUMBER, tok})
+        elseif match(c, "-") and match(c2,"%d") then
+            sr:getc()
+            tok = get_num(sr)
+            table.insert(tokenlist, {TOK_NUMBER, tok * -1})
+        elseif match(c, "%$") then
+            sr:getc()
+            tok = get_word(sr)
+            table.insert(tokenlist, {TOK_VAR, tok})
+        elseif match(c, "[,=/>[<-*!+|?@%]:]") then
+            -- ',', =, >=, >>, >, [, <=, <<, <, -, *, !=, +, //, /, |
+            local op = sr:getc()
+
+            if op == "/" and sr:peek() == "/" then
+                op = "//"
+                sr:getc()
+            elseif op == "<" and sr:peek() == "<" then
+                op = "<<"
+                sr:getc()
+            elseif op == ">" and sr:peek() == ">" then
+                op = ">>"
+                sr:getc()
+            elseif op == ">" and sr:peek() == "=" then
+                op = ">="
+                sr:getc()
+            elseif op == "<" and sr:peek() == "=" then
+                op = "<="
+                sr:getc()
+            elseif op == "!" and sr:peek() == "=" then
+                op = "!="
+                sr:getc()
+            elseif op == "." and sr:peek() == "." then
+                op = ".."
+                sr:getc()
+            elseif op == ":" and sr:peek() == ":" then
+                op = "::"
+                sr:getc()
+            end
+            table.insert(tokenlist, {TOK_OPERATOR, op})
+        elseif match(c, "'") or match(c, '"') then
+            tok = get_delimited_string(sr)
+            table.insert(tokenlist, {TOK_STRING, tok})
+        elseif match(c, "%s") then
+            space(sr)
+        else
+            w("unhandled token %q", c)
+            break
+        end
+    end
+
+    return parseExpr(infotbl)
+end
+
+
+return {
+    parse = parse,
+    register = register,
+}

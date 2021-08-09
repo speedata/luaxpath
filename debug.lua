@@ -40,8 +40,12 @@ function toktostring(tok)
       return "TOK_OCCURRENCEINDICATOR"
   elseif tok == 12 then
       return "TOK_OPENBRACKET"
-  elseif tok == 13 then
+    elseif tok == 13 then
       return "TOK_CLOSEBRACKET"
+    elseif tok == 14 then
+      return "TOK_QNAME"
+    elseif tok == 15 then
+      return "TOK_NCNAME"
   end
 end
 
@@ -58,7 +62,7 @@ do
     local nexttok = infotbl.peek()
     level = level - 1
     nexttok = nexttok or {0,""}
-    w("%s%s..done (next: %s|%q)",string.rep(" ",level),where,toktostring(nexttok[1]),nexttok[2])
+    w("%s%s ... done (next: %s|%q)",string.rep(" ",level),where,toktostring(nexttok[1]),nexttok[2])
   end
 end
 

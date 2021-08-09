@@ -23,8 +23,9 @@ function getc(self)
     return s
 end
 
-function peek(self)
-    return self.tab[self.pos]
+function peek(self,pos)
+    pos = pos or 1
+    return self.tab[self.pos + pos - 1]
 end
 
 function back(self)
