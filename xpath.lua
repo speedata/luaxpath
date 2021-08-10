@@ -162,7 +162,7 @@ function parseExprSingle(infotbl)
         local nexttoktype = nexttok[1]
         local nexttokvalue = nexttok[2]
         if nexttokvalue == "for" then
-            parseForExpr(infotbl)
+            ret = parseForExpr(infotbl)
         elseif nexttokvalue == "some" or nexttokvalue == "every" then
             parseQuantifiedExpr(infotbl)
         elseif nexttokvalue == "if" then
@@ -174,6 +174,44 @@ function parseExprSingle(infotbl)
     leaveStep(infotbl,"3 parseExprSinge")
     return ret
 end
+
+
+-- [4] ForExpr ::= SimpleForClause "return" ExprSingle
+function parseForExpr(infotbl)
+    enterStep(infotbl,"4 parseForExpr")
+    local sfc = parseSimpleForClause(infotbl)
+    infotbl.skip("return")
+    local ret = parseExprSingle(infotbl)
+    leaveStep(infotbl,"4 parseForExpr")
+    return function(ctx)
+        local varname, tbl = sfc(ctx)
+        local newret = {}
+        for i = 1, #tbl do
+            ctx.var[varname] = tbl[i]
+            table.insert(newret, ret(ctx) )
+        end
+        return newret
+    end
+end
+
+-- [5] SimpleForClause ::= "for" "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)*
+function parseSimpleForClause(infotbl)
+    enterStep(infotbl,"5 parseSimpleForClause")
+    infotbl.skip("for")
+    local nexttok = infotbl.peek()
+    local nexttoktype = nexttok[1]
+    local varname = nexttok[2]
+    if nexttoktype ~= TOK_VAR then
+        w("parse error simpleForClause")
+    end
+    _ = infotbl.nexttok
+    infotbl.skip("in")
+    local ret = parseExprSingle(infotbl)
+    leaveStep(infotbl,"5 parseSimpleForClause")
+    return function(ctx) return varname, ret(ctx) end
+end
+
+-- [6] QuantifiedExpr ::= ("some" | "every") "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)* "satisfies" ExprSingle
 
 -- [7] IfExpr ::= "if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
 function parseIfExpr(infotbl)
@@ -239,14 +277,19 @@ end
 function parseRangeExpr(infotbl)
     enterStep(infotbl,"11 parseRangeExpr")
     local ret = parseAdditiveExpr(infotbl)
-    while true do
-        local nt = infotbl.peek()
-        if nt and nt[2] == "to" then
-            _ = infotbl.nexttok
-            parseAdditiveExpr(infotbl)
-        else
-            break
+    local nt = infotbl.peek()
+    if nt and nt[2] == "to" then
+        _ = infotbl.nexttok
+        local to = parseAdditiveExpr(infotbl)
+        return function(ctx)
+            local newret = {}
+            for i = ret(ctx),to(ctx) do
+                table.insert(newret,i)
+            end
+            return newret
         end
+    else
+        return ret
     end
     leaveStep(infotbl,"11 parseRangeExpr")
     return ret
@@ -598,7 +641,7 @@ function parsePrimaryExpr(infotbl)
         ret = function() return tonumber(nexttok) end
     elseif nexttoktype == TOK_VAR then
         local varname = infotbl.nexttok[2]
-        return function(ctx) return ctx[varname] end
+        return function(ctx) return ctx.var[varname] end
     elseif nexttoktype == TOK_OPENPAREN then
         return parseParenthesizedExpr(infotbl)
     elseif nexttoktype == TOK_OPERATOR and nexttokvalue == "." then
@@ -650,9 +693,19 @@ function parseFunctionCall(infotbl)
         end
     end
     infotbl.skip(")")
-    local f = xpathfunctions[""][fname]
+    local prefix = ""
+    if match(fname, ":") then
+        local c = string.find(fname,":")
+        prefix = string.sub(fname,1,c-1)
+        fname = string.sub(fname,c+1,-1)
+    end
     leaveStep(infotbl,"48 parseFunctionCall")
-    return function(ctx) return f(ctx, args) end
+    return function(ctx)
+        -- first, resolve the prefix
+        local ns = ctx.ns[prefix] or ""
+        local f = xpathfunctions[ns][fname]
+        return f(ctx, args)
+    end
 end
 
 
