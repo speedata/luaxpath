@@ -19,6 +19,27 @@ end
 
 local match = unicode.utf8.match
 
+local function doCompare(cmpfunc, a,b)
+    if type(a) == "number" then a = {a} end
+    if type(b) == "number" then b = {b} end
+    local ret = false
+    for ca = 1, #a do
+        for cb = 1, #b do
+            if cmpfunc(a[ca],b[cb]) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function isEqual(a,b) return a == b end
+local function isNotEqual(a,b) return a ~= b end
+local function isLess(a,b) return a < b end
+local function isLessEqual(a,b) return a <= b end
+local function isGreater(a,b) return a > b end
+local function isGreaterEqual(a,b) return a >= b end
+
 -- Read all space until a non-space is found
 local function space(sr)
     if sr:eof() then
@@ -145,6 +166,7 @@ function parseExpr(infotbl)
     leaveStep(infotbl,"2 parseExpr")
     if #ret == 1 then return ret[1] end
     return function(ctx)
+        assert(ctx)
         local new = {}
         for i = 1, #ret do
             table.insert(new,ret[i](ctx))
@@ -166,7 +188,7 @@ function parseExprSingle(infotbl)
         elseif nexttokvalue == "some" or nexttokvalue == "every" then
             parseQuantifiedExpr(infotbl)
         elseif nexttokvalue == "if" then
-            parseIfExpr(infotbl)
+            ret = parseIfExpr(infotbl)
         else
             ret = parseOrExpr(infotbl)
         end
@@ -174,7 +196,6 @@ function parseExprSingle(infotbl)
     leaveStep(infotbl,"3 parseExprSinge")
     return ret
 end
-
 
 -- [4] ForExpr ::= SimpleForClause "return" ExprSingle
 function parseForExpr(infotbl)
@@ -184,6 +205,7 @@ function parseForExpr(infotbl)
     local ret = parseExprSingle(infotbl)
     leaveStep(infotbl,"4 parseForExpr")
     return function(ctx)
+        assert(ctx)
         local varname, tbl = sfc(ctx)
         local newret = {}
         for i = 1, #tbl do
@@ -208,7 +230,7 @@ function parseSimpleForClause(infotbl)
     infotbl.skip("in")
     local ret = parseExprSingle(infotbl)
     leaveStep(infotbl,"5 parseSimpleForClause")
-    return function(ctx) return varname, ret(ctx) end
+    return function(ctx) assert(ctx) return varname, ret(ctx) end
 end
 
 -- [6] QuantifiedExpr ::= ("some" | "every") "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)* "satisfies" ExprSingle
@@ -220,15 +242,16 @@ function parseIfExpr(infotbl)
     if nexttok[2] ~= "if" then
         w("parse error, 'if' expected")
     end
-
     infotbl.skiptoken(TOK_OPENPAREN)
-    parseExpr(infotbl)
+    local test = parseExpr(infotbl)
     infotbl.skiptoken(TOK_CLOSEPAREN)
     infotbl.skip("then")
-    parseExprSingle(infotbl)
+    local thenpart = parseExprSingle(infotbl)
     infotbl.skip("else")
-    parseExprSingle(infotbl)
+    local elsepart = parseExprSingle(infotbl)
     leaveStep(infotbl,"7 parseIfExpr")
+    return function(ctx) assert(ctx) if test(ctx) then return thenpart(ctx) else return elsepart(ctx) end
+        end
 end
 
 -- [8] OrExpr ::= AndExpr ( "or" AndExpr )*
@@ -255,18 +278,39 @@ end
 -- [10] ComparisonExpr ::= RangeExpr ( (ValueComp | GeneralComp| NodeComp) RangeExpr )?
 function parseComparisonExpr(infotbl)
     enterStep(infotbl,"10 parseComparisonExpr")
-    local ret = parseRangeExpr(infotbl)
+    local lhs = parseRangeExpr(infotbl)
     local nexttok = infotbl.peek()
-    if nexttok then
-        local op = nexttok[2]
-        if op then
-            -- [23] ValueComp	   ::= "eq" | "ne" | "lt" | "le" | "gt" | "ge"
-            -- [22] GeneralComp	   ::= "=" | "!=" | "<" | "<=" | ">" | ">="
-            -- [24] NodeComp	   ::= "is" | "<<" | ">>"
-            if op == "eq" or op == "ne" or op == "lt" or op == "le" or op == "gt" or op == "ge" or op == "=" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=" or op == "is" or op == "<<" or op == ">>" then
-                _ = infotbl.nexttok
-                parseRangeExpr(infotbl)
-            end
+    -- [23] ValueComp	   ::= "eq" | "ne" | "lt" | "le" | "gt" | "ge"
+    -- [22] GeneralComp	   ::= "=" | "!=" | "<" | "<=" | ">" | ">="
+    -- [24] NodeComp	   ::= "is" | "<<" | ">>"
+    local ret = lhs
+    if nexttok and ( nexttok[2] == "eq" or nexttok[2] == "ne" or nexttok[2] == "lt" or nexttok[2] == "le" or nexttok[2] == "gt" or nexttok[2] == "ge" or nexttok[2] == "=" or nexttok[2] == "!=" or nexttok[2] == "<" or nexttok[2] == "<=" or nexttok[2] == ">" or nexttok[2] == ">=" or nexttok[2] == "is" or nexttok[2] == "<<" or nexttok[2] == ">>") then
+        local op = (infotbl.nexttok)[2]
+        rhs = parseRangeExpr(infotbl)
+        if op == "=" then
+            ret = function(ctx) assert(ctx) return doCompare(isEqual,lhs(ctx),rhs(ctx)) end
+        elseif op == "!=" then
+            ret = function(ctx) assert(ctx) return doCompare(isNotEqual,lhs(ctx),rhs(ctx)) end
+        elseif op == "<" then
+            ret = function(ctx) assert(ctx) return doCompare(isLess,lhs(ctx),rhs(ctx)) end
+        elseif op == "<=" then
+            ret = function(ctx) assert(ctx) return doCompare(isLessEqual,lhs(ctx),rhs(ctx)) end
+        elseif op == ">" then
+            ret = function(ctx) assert(ctx) return doCompare(isGreater,lhs(ctx),rhs(ctx)) end
+        elseif op == ">=" then
+            ret = function(ctx) assert(ctx) return doCompare(isGreaterEqual,lhs(ctx),rhs(ctx)) end
+        elseif op == "eq" then
+            ret = function(ctx) assert(ctx) return doCompare(isEqual,lhs(ctx),rhs(ctx)) end
+        elseif op == "ne" then
+            ret = function(ctx) assert(ctx) return doCompare(isNotEqual,lhs(ctx),rhs(ctx)) end
+        elseif op == "lt" then
+            ret = function(ctx) assert(ctx) return doCompare(isLess,lhs(ctx),rhs(ctx)) end
+        elseif op == "le" then
+            ret = function(ctx) assert(ctx) return doCompare(isLessEqual,lhs(ctx),rhs(ctx)) end
+        elseif op == "gt" then
+            ret = function(ctx) assert(ctx) return doCompare(isGreater,lhs(ctx),rhs(ctx)) end
+        elseif op == "ge" then
+            ret = function(ctx) assert(ctx) return doCompare(isGreaterEqual,lhs(ctx),rhs(ctx)) end
         end
     end
     leaveStep(infotbl,"10 parseComparisonExpr")
@@ -282,6 +326,7 @@ function parseRangeExpr(infotbl)
         _ = infotbl.nexttok
         local to = parseAdditiveExpr(infotbl)
         return function(ctx)
+            assert(ctx)
             local newret = {}
             for i = ret(ctx),to(ctx) do
                 table.insert(newret,i)
@@ -313,6 +358,7 @@ function parseAdditiveExpr(infotbl)
     end
     leaveStep(infotbl,"12 parseAdditiveExpr")
     return function(ctx)
+        assert(ctx)
         local cur
         cur = tbl[1](ctx)
         local i = 1
