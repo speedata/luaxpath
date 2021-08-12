@@ -71,7 +71,7 @@ do
   tables_printed = {}
   function printtable (ind,tbl_to_print,level)
     if type(tbl_to_print) ~= "table" then
-      log("printtable: %q ist keine Tabelle, es ist ein %s (%q)",tostring(ind),type(tbl_to_print),tostring(tbl_to_print))
+      log("printtable: %q is not a table, it is a %s (%q)",tostring(ind),type(tbl_to_print),tostring(tbl_to_print))
       return
     end
     level = level or 0

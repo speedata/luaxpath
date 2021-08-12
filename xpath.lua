@@ -1,12 +1,23 @@
+
+
 dofile("debug.lua")
+
+if disable_debug then
+    function enterStep() end
+    function leaveStep() end
+end
 
 module(..., package.seeall)
 
-stringreader = require("stringreader")
+local string = unicode.utf8
 
-local round = function(a, prec)
-    return math.floor(a + 0.5 * prec) -- where prec is 10^n, starting at 0
-end
+local parsePrimaryExpr, parsePredicate, parsePredicateList, parseForExpr, parseExpr, parseSimpleForClause
+
+local stringreader = require("stringreader")
+
+-- local round = function(a, prec)
+--     return math.floor(a + 0.5 * prec) -- where prec is 10^n, starting at 0
+-- end
 
 local xpathfunctions = {}
 
@@ -103,7 +114,7 @@ local function get_word(sr)
     return table.concat(ret, "")
 end
 
-local function get_comment()
+local function get_comment(sr)
     local ret = {}
     local level = 1
     sr:getc()
@@ -181,11 +192,15 @@ function parseExpr(infotbl)
 
     return function(ctx)
         assert(ctx)
-        local new = {}
-        for i = 1, #ret do
-            table.insert(new, ret[i](ctx))
+        if #ret == 1 then
+            return ret[1](ctx)
+        else
+            local new = {}
+            for i = 1, #ret do
+                table.insert(new, ret[i](ctx))
+            end
+            return new
         end
-        return new
     end
 end
 
@@ -212,6 +227,9 @@ function parseExprSingle(infotbl)
 end
 
 -- [4] ForExpr ::= SimpleForClause "return" ExprSingle
+
+-- Parse `for $foo in ... return` expression
+---@return function contextevaluator
 function parseForExpr(infotbl)
     enterStep(infotbl, "4 parseForExpr")
     local sfc = parseSimpleForClause(infotbl)
@@ -289,7 +307,6 @@ function parseOrExpr(infotbl)
         local nexttok = infotbl.peek()
         if nexttok and nexttok[2] == "or" then
             _ = infotbl.nexttok
-            w("or")
             tmp[#tmp + 1] = parseAndExpr(infotbl)
         else
             break
@@ -323,7 +340,6 @@ function parseAndExpr(infotbl)
         local nexttok = infotbl.peek()
         if nexttok and nexttok[2] == "and" then
             _ = infotbl.nexttok
-            w("and")
             tmp[#tmp + 1] = parseAndExpr(infotbl)
         else
             break
@@ -431,21 +447,22 @@ end
 -- [11]   	RangeExpr  ::=  AdditiveExpr ( "to" AdditiveExpr )?
 function parseRangeExpr(infotbl)
     enterStep(infotbl, "11 parseRangeExpr")
-    local ret = parseAdditiveExpr(infotbl)
+    local ae = parseAdditiveExpr(infotbl)
     local nt = infotbl.peek()
+    local ret
     if nt and nt[2] == "to" then
         _ = infotbl.nexttok
         local to = parseAdditiveExpr(infotbl)
-        return function(ctx)
+        ret = function(ctx)
             assert(ctx)
             local newret = {}
-            for i = ret(ctx), to(ctx) do
+            for i = ae(ctx), to(ctx) do
                 table.insert(newret, i)
             end
             return newret
         end
     else
-        return ret
+        ret = ae
     end
     leaveStep(infotbl, "11 parseRangeExpr")
     return ret
@@ -528,7 +545,14 @@ function parseMultiplicativeExpr(infotbl)
             elseif tbl[i + 1] == "div" then
                 cur = cur / tbl[i + 2](ctx)
             elseif tbl[i + 1] == "idiv" then
-                cur = round(cur / tbl[i + 2](ctx), 0)
+                local first = cur
+                local second = tbl[i + 2](ctx)
+                local a = first / second
+                if a > 0 then
+                    cur = math.floor(a)
+                else
+                    cur = math.ceil(a)
+                end
             elseif tbl[i + 1] == "mod" then
                 cur = cur % tbl[i + 2](ctx)
             end
@@ -816,6 +840,7 @@ function parsePredicateList(infotbl)
     leaveStep(infotbl, "39 parsePredicateList")
 end
 
+
 -- [40] Predicate ::= "[" Expr "]"
 function parsePredicate(infotbl)
     enterStep(infotbl, "40 parsePredicate")
@@ -981,7 +1006,7 @@ end
 -- [57] TextTest ::= "text" "(" ")"
 -- [55] AnyKindTest ::= "node" "(" ")"
 
-infomt = {
+local infomt = {
     __index = function(tbl, key)
         if key == "nexttok" then
             tbl.pos = tbl.pos + 1
@@ -1044,8 +1069,8 @@ function parse(str)
             sr:getc()
             c = sr:peek()
             if c == ":" then
-                tok = get_comment()
-                table.insert(tokenlist, {TOK_COMMENT, tok})
+                tok = get_comment(sr)
+                -- table.insert(tokenlist, {TOK_COMMENT, tok})
             else
                 table.insert(tokenlist, {TOK_OPENPAREN, "("})
             end
@@ -1105,8 +1130,16 @@ function parse(str)
             break
         end
     end
-
     return parseExpr(infotbl)
+end
+
+-- ---------------------------------------------------------------------
+local function get_string_argument(ctx,args,fromwhere)
+    if #args ~= 1 then
+        w("error, one argument expected %s",fromwhere)
+        return ""
+    end
+    return args[1](ctx)
 end
 
 local function fnCount(ctx, args)
@@ -1118,17 +1151,63 @@ local function fnCount(ctx, args)
     return #args
 end
 
-local function fnTrue(ctx, args)
-    return true
-end
-
 local function fnFalse(ctx, args)
     return false
 end
 
+local function fnMax(ctx,args)
+    local max = tonumber(args[1](ctx))
+    if not max then
+        w("First argument in max() is not a number, returning 0")
+        return 0
+    end
+    for i=2,#args do
+        local argn = args[i](ctx)
+        if tonumber(argn) and tonumber(argn) > max then
+            max = tonumber(argn)
+        end
+    end
+    return max
+end
+
+local function fnMin(ctx,args)
+    local min = tonumber(args[1](ctx))
+    if not min then
+            w("First argument in min() is not a number, returning 0")
+        return 0
+    end
+    for i=2,#args do
+        local argn = args[i](ctx)
+        if tonumber(argn) and tonumber(argn) < min then
+            min = tonumber(argn)
+        end
+    end
+    return min
+end
+
+local function fnNormalizeSpace(ctx, args)
+    local str = get_string_argument(ctx,args,"normalize-space")
+    str = str:gsub("^%s*(.-)%s*$","%1"):gsub("[%s\n]+"," ")
+    return str
+end
+
+local function fnUpperCase(ctx,args)
+    local str = get_string_argument(ctx,args,"upper-case")
+    return string.upper(str)
+end
+
+local function fnTrue(ctx, args)
+    return true
+end
+
+
 register("", "count", fnCount)
-register("", "true", fnTrue)
 register("", "false", fnFalse)
+register("", "normalize-space", fnNormalizeSpace)
+register("", "max",fnMax)
+register("", "min",fnMin)
+register("", "upper-case", fnUpperCase)
+register("", "true", fnTrue)
 
 return {
     parse = parse,
