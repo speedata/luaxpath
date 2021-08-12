@@ -1,8 +1,8 @@
 
 
-module(...,package.seeall)
+local stringreader = {}
 
-function new(self,str)
+function stringreader.new(self,str)
     local s = {
         str = str,
         pos = 1
@@ -17,24 +17,25 @@ function new(self,str)
 	return s
 end
 
-function getc(self)
+function stringreader.getc(self)
     local s = self.tab[self.pos]
     self.pos = self.pos + 1
     return s
 end
 
-function peek(self,pos)
+function stringreader.peek(self,pos)
     pos = pos or 1
     return self.tab[self.pos + pos - 1]
 end
 
-function back(self)
+function stringreader.back(self)
     self.pos = self.pos -1
     return self.tab[self.pos]
 end
 
 
-function eof(self)
+function stringreader.eof(self)
     return self.pos == #self.tab +1
 end
 
+return stringreader

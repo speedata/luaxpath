@@ -11,7 +11,7 @@ module(..., package.seeall)
 
 local string = unicode.utf8
 
-local parsePrimaryExpr, parsePredicate, parsePredicateList, parseForExpr, parseExpr, parseSimpleForClause
+local parsePrimaryExpr, parsePredicate, parsePredicateList, parseForExpr, parseExpr, parseSimpleForClause, parseAndExpr
 
 local stringreader = require("stringreader")
 
@@ -26,7 +26,7 @@ local function register(ns, name, fun)
     xpathfunctions[ns][name] = fun
 end
 
-local match = unicode.utf8.match
+local match = string.match
 
 local function doCompare(cmpfunc, a, b)
     if type(a) == "number" then
@@ -389,7 +389,7 @@ function parseComparisonExpr(infotbl)
                 nexttok[2] == ">>")
      then
         local op = (infotbl.nexttok)[2]
-        rhs = parseRangeExpr(infotbl)
+        local rhs = parseRangeExpr(infotbl)
         if op == "=" then
             ret = function(ctx)
                 return doCompare(isEqual, lhs(ctx), rhs(ctx))
@@ -693,7 +693,7 @@ end
 -- [28] AxisStep ::= (ReverseStep | ForwardStep) PredicateList
 function parseAxisStep(infotbl)
     enterStep(infotbl, "28 parseAxisStep")
-    ret = parseReverseStep(infotbl)
+    local ret = parseReverseStep(infotbl)
     if not ret then
         ret = parseForwardStep(infotbl)
     end
@@ -1041,7 +1041,7 @@ local infomt = {
     end
 }
 
-function parse(str)
+local function parse(str)
     local sr = stringreader:new(str)
     local tokenlist = {}
     local infotbl = {

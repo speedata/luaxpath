@@ -70,5 +70,79 @@ end
 
 function test_parse_string(  )
     assert_equal(eval(" 'ba\"r' "),"ba\"r")
-  end
+end
+
+function test_ifthenelse()
+    assert_true(eval( " if ( 1 = 1 ) then true() else false()" ))
+    assert_false(eval(" if ( 1 = 2 ) then true() else false()" ))
+    assert_equal(eval(" if ( true() ) then 1 else 2"),1)
+    assert_equal(eval(" if ( false() ) then 1 else 2"),2 )
+    assert_equal(eval(" if ( false() ) then 'a' else 'b'"),"b")
+    assert_equal(eval(" if ( true() ) then 'a' else 'b'"),"a")
+end
+
+function test_unaryexpr(  )
+    assert_equal(eval(" -4 "), -4)
+    assert_equal(eval(" +-+-+4 "), 4)
+    assert_equal(eval(" 4 "), 4)
+    assert_equal(eval(" 5 - 1 - 3 "), 1)
+end
+
+function test_paren()
+    assert_equal(eval(" ( 6 + 4 )"), 10)
+    assert_equal(eval(" ( 6 + 4 ) * 2"), 20)
+end
+
+
+function test_parse_arithmetic(  )
+    assert_equal(eval(" 5"), 5)
+    assert_equal(eval(" 3.4 "), 3.4)
+    assert_equal(eval(" 'string' "), "string")
+    assert_equal(eval(" 5 * 6"), 30)
+    assert_equal(eval(" 5 mod 2 "), 1)
+    assert_equal(eval(" 4 mod 2 "), 0)
+    assert_equal(eval(" 9 * 4 div 6"), 6)
+    assert_equal(eval(" 6 + 5"), 11)
+    assert_equal(eval(" 6 - 5" ), 1)
+    assert_equal(eval(" 6-5" ), 1)
+    assert_equal(eval(" 6 + 5 + 3"), 14)
+    assert_equal(eval(" 10 - 10 - 5 "), -5)
+    assert_equal(eval(" 4 * 2 + 6"), 14)
+    assert_equal(eval(" 6 + 4 * 2"), 14)
+    assert_equal(eval(" 6 + 4  div 2"), 8)
+    assert_equal(eval(" 3.4 * 2"  ), 6.8)
+--   assert_equal(eval("@one * 9.2" ), 9.2)
+--   assert_equal(eval(" sd:return-ten() mod 2 "), 0)
+--   assert_equal(eval(" $column + 2"               ), 4)
+--   assert_equal(eval(" 1 - $counter"              ), 0)
+--   assert_equal(eval("3.4 * $column"              ), 6.8)
+--   assert_equal(eval(" $column * 3.4"             ), 6.8)
+end
+
+function test_comparison(  )
+    assert_true(eval(" 3 < 6 " ))
+    assert_true(eval(" 6 > 3 " ))
+    assert_true(eval(" 3 <= 3 " ))
+    assert_true(eval(" 3 = 3 " ))
+    assert_true(eval(" 4 != 3 " ))
+    -- assert_false(eval( " $column > 3 "))
+    -- assert_true(eval( " $counter = 1 "))
+end
+
+function test_string()
+    assert_equal(eval("'aäßc'" ),'aäßc')
+    assert_equal(eval('"aäßc"' ),'aäßc')
+    assert_equal(eval("  'aäßc'  " ),'aäßc')
+end
+
+function test_multiple()
+    assert_equal(eval("3 , 3" ),{3,3})
+    assert_equal(eval("(3 , 3)" ),{3,3})
+end
+
+function test_num()
+    assert_equal(eval(" -3.2 " ),-3.2)
+    assert_equal(eval(" -3" ),-3)
+end
+
 

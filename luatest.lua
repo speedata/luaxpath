@@ -13,8 +13,8 @@ local count_assertions = 0
 local count_tests = 0
 local count_errors = 0
 
-current_file = nil
-current_function = nil
+local current_file = nil
+local current_function = nil
 local function passed()
     count_assertions = count_assertions + 1
     io.write(".")
@@ -60,13 +60,6 @@ end
 
 local function row()
     return debug.traceback():explode("\n")[4]:gsub("^.*:(%d+):.*$", "%1")
-end
-
-function firstoftwo(a, b)
-    return a
-end
-function secondoftwo(a, b)
-    return b
 end
 
 function assert_equal(a, b, msg)
@@ -148,7 +141,7 @@ function assert_false(a, msg)
 end
 
 function assert_fail(...)
-    ok, msg = pcall(...)
+    local ok, msg = pcall(...)
     if ok == false then
         passed()
         if msg:match("assertion failed!") then
@@ -160,7 +153,7 @@ function assert_fail(...)
 end
 
 function assert_not_fail(...)
-    ok, msg = pcall(...)
+    local ok, msg = pcall(...)
     if ok == true then
         passed()
         return true
