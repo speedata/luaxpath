@@ -11,8 +11,6 @@ module(..., package.seeall)
 
 local string = unicode.utf8
 
-local parsePrimaryExpr, parsePredicate, parsePredicateList, parseForExpr, parseExpr, parseSimpleForClause, parseAndExpr
-
 local stringreader = require("stringreader")
 
 -- local round = function(a, prec)
@@ -653,7 +651,27 @@ end
 -- [25] PathExpr ::= ("/" RelativePathExpr?) | ("//" RelativePathExpr) | RelativePathExpr
 function parsePathExpr(infotbl)
     enterStep(infotbl, "25 parsePathExpr")
-    local ret = parseRelativePathExpr(infotbl)
+    local nexttok = infotbl.peek()
+    if not nexttok then
+        leaveStep(infotbl, "25 parsePathExpr")
+        return
+    end
+    local ret
+    if nexttok[2] == "/" then
+        infotbl.skip("/")
+        w("slash")
+        ret = parseRelativePathExpr(infotbl)
+        if not ret then
+            w("no relative path expression")
+            ret = function(ctx)
+                local newret = ctx.xml
+                    w("#newret %s",tostring(#newret))
+                return newret
+            end
+        end
+    else
+        ret = parseRelativePathExpr(infotbl)
+    end
     leaveStep(infotbl, "25 parsePathExpr")
     return ret
 end
@@ -670,6 +688,7 @@ function parseRelativePathExpr(infotbl)
         end
         if nt[2] == "/" or nt[2] == "//" then
             infotbl.skip(nt[2])
+            w("******")
             parseStepExpr(infotbl)
         else
             break
@@ -854,16 +873,21 @@ end
 function parsePrimaryExpr(infotbl)
     enterStep(infotbl, "41 parsePrimaryExpr")
     local nexttok = infotbl.peek()
+    if not nexttok then
+        leaveStep(infotbl, "41 parsePrimaryExpr")
+        return ret
+    end
+
     local nexttoktype = nexttok[1]
     local nexttokvalue = nexttok[2]
     local ret
     if nexttoktype == TOK_STRING then
-        local nexttok = infotbl.nexttok[2]
+        nexttok = infotbl.nexttok[2]
         ret = function()
             return nexttok
         end
     elseif nexttoktype == TOK_NUMBER then
-        local nexttok = infotbl.nexttok[2]
+        nexttok = infotbl.nexttok[2]
         ret = function()
             return tonumber(nexttok)
         end
@@ -1142,6 +1166,25 @@ local function get_string_argument(ctx,args,fromwhere)
     return args[1](ctx)
 end
 
+
+local function fnBoolean(ctx,args)
+    if #args ~= 1 then
+        w("Error, boolean() must be called with one element")
+        return false
+    end
+    local arg = args[1](ctx)
+    if tonumber(arg) then
+        return tonumber(arg) ~= 0
+    elseif type(arg) == "boolean" then
+        return arg
+    elseif type(arg) == "string" then
+        return #arg > 0
+    elseif type(arg) == "table" and #arg == 0 then
+        return false
+    end
+
+end
+
 local function fnCount(ctx, args)
     if #args ~= 1 then
         w("error, one argument expected")
@@ -1201,6 +1244,7 @@ local function fnTrue(ctx, args)
 end
 
 
+register("", "boolean", fnBoolean)
 register("", "count", fnCount)
 register("", "false", fnFalse)
 register("", "normalize-space", fnNormalizeSpace)
