@@ -2,6 +2,9 @@ module(...,package.seeall)
 
 local xpath = require("xpath")
 
+dofile("xmltable1.lua")
+
+
 xpath.register("nsfoo","adder",function(ctx, args)
     local sum = 0
     for i = 1, #args do
@@ -13,6 +16,8 @@ end )
 local ctx = {
     var = {
         a = 5,
+        two = 2,
+        one = 1,
         ["one-two"] = 12,
     },
     ns = {
@@ -119,12 +124,11 @@ function test_parse_arithmetic(  )
     assert_equal(eval(" 6 + 4 * 2"), 14)
     assert_equal(eval(" 6 + 4  div 2"), 8)
     assert_equal(eval(" 3.4 * 2"  ), 6.8)
---   assert_equal(eval("@one * 9.2" ), 9.2)
 --   assert_equal(eval(" sd:return-ten() mod 2 "), 0)
---   assert_equal(eval(" $column + 2"               ), 4)
---   assert_equal(eval(" 1 - $counter"              ), 0)
---   assert_equal(eval("3.4 * $column"              ), 6.8)
---   assert_equal(eval(" $column * 3.4"             ), 6.8)
+    assert_equal(eval(" $two + 2"               ), 4)
+    assert_equal(eval(" 1 - $one"              ), 0)
+    assert_equal(eval("3.4 * $two"              ), 6.8)
+    assert_equal(eval(" $two * 3.4"             ), 6.8)
 end
 
 function test_comparison(  )
@@ -133,8 +137,8 @@ function test_comparison(  )
     assert_true(eval(" 3 <= 3 " ))
     assert_true(eval(" 3 = 3 " ))
     assert_true(eval(" 4 != 3 " ))
-    -- assert_false(eval( " $column > 3 "))
-    -- assert_true(eval( " $counter = 1 "))
+    assert_false(eval( " $two > 3 "))
+    assert_true(eval( " $one = 1 "))
 end
 
 function test_string()
@@ -153,4 +157,9 @@ function test_num()
     assert_equal(eval(" -3" ),-3)
 end
 
+function test_xmltable1()
+    ctx.nn = xpath.NodeNavigator:new(xmldoctable1)
+    assert_equal(eval("count( / root / * ) "),3)
+    -- assert_equal(eval(" /root/@one " ), 1)
 
+end

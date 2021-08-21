@@ -158,6 +158,17 @@ local function get_delimited_string(sr)
     return table.concat(ret, "")
 end
 
+
+local function xpath_test_eltname(eltname)
+    return function(xmlelt)
+        if type(xmlelt) == "table" and ( xmlelt[".__name"] == eltname or eltname == "*") then
+            return true
+        end
+        return false
+    end
+end
+
+
 local TOK_WORD = 1
 local TOK_VAR = 2
 local TOK_OPENPAREN = 3
@@ -656,17 +667,20 @@ function parsePathExpr(infotbl)
         leaveStep(infotbl, "25 parsePathExpr")
         return
     end
-    local ret
+    local rpe, ret
     if nexttok[2] == "/" then
         infotbl.skip("/")
-        w("slash")
-        ret = parseRelativePathExpr(infotbl)
-        if not ret then
-            w("no relative path expression")
+        rpe = parseRelativePathExpr(infotbl)
+        if rpe then
             ret = function(ctx)
-                local newret = ctx.xml
-                    w("#newret %s",tostring(#newret))
-                return newret
+                local nn = ctx.nn
+                nn:root()
+                return rpe(ctx)
+            end
+        else
+            ret = function(ctx)
+                local nn = ctx.nn
+                return nn:root()
             end
         end
     else
@@ -679,8 +693,8 @@ end
 -- [26] RelativePathExpr ::= StepExpr (("/" | "//") StepExpr)*
 function parseRelativePathExpr(infotbl)
     enterStep(infotbl, "26 parseRelativePathExpr")
-    local ret
-    ret = parseStepExpr(infotbl)
+    local ret = {}
+    ret[#ret+1] = parseStepExpr(infotbl)
     while true do
         local nt = infotbl.peek()
         if not nt then
@@ -688,14 +702,32 @@ function parseRelativePathExpr(infotbl)
         end
         if nt[2] == "/" or nt[2] == "//" then
             infotbl.skip(nt[2])
-            w("******")
-            parseStepExpr(infotbl)
+            nt = infotbl.peek()
+            local f
+            if nt[2] == "*" then
+                infotbl.skip("*")
+                f = function(ctx) return ctx.nn:child(xpath_test_eltname("*")) end
+            else
+                local tmp = parseStepExpr(infotbl)
+                f = function(ctx)
+                    return tmp(ctx)
+                end
+            end
+            ret[#ret+1] = f
         else
             break
         end
     end
     leaveStep(infotbl, "26 parseRelativePathExpr")
-    return ret
+    if #ret == 0 then return nil end
+    if #ret == 1 then return ret[1] end
+    return function (ctx)
+        local newret
+        for i = 1, #ret do
+            newret = ret[i](ctx)
+        end
+        return newret
+    end
 end
 
 -- 27 StepExpr := FilterExpr | AxisStep
@@ -757,7 +789,6 @@ function parseForwardAxis(infotbl)
                     opname == "following" or
                     opname == "namespace")
          then
-            w("forward step")
             _ = infotbl.nexttok
             _ = infotbl.nexttok
             ret = {}
@@ -797,7 +828,6 @@ function parseReverseAxis(infotbl)
                 (opname == "parent" or opname == "ancestor" or opname == "preceding-sibling" or opname == "preceding" or
                     opname == "ancestor-or-self")
          then
-            w("reversestep")
             _ = infotbl.nexttok
             _ = infotbl.nexttok
             ret = {}
@@ -825,7 +855,7 @@ function parseNameTest(infotbl)
     local nt = infotbl.peek()
     if nt and (nt[1] == TOK_QNAME or nt[1] == TOK_NCNAME) then
         _ = infotbl.nexttok
-        return true
+        return function(ctx) return ctx.nn:child(xpath_test_eltname(nt[2])) end
     end
     leaveStep(infotbl, "36 parseNameTest")
 end
@@ -1243,7 +1273,6 @@ local function fnTrue(ctx, args)
     return true
 end
 
-
 register("", "boolean", fnBoolean)
 register("", "count", fnCount)
 register("", "false", fnFalse)
@@ -1253,7 +1282,134 @@ register("", "min",fnMin)
 register("", "upper-case", fnUpperCase)
 register("", "true", fnTrue)
 
+
+local NodeNavigator = {}
+
+local function setparents(xmlelt)
+    for i = 1, #xmlelt do
+        local cur = xmlelt[i]
+        if type(cur) == "table" then
+            if cur[".__type"] then
+                cur[".__parent"] = xmlelt
+            end
+            setparents(cur)
+        end
+    end
+end
+
+function NodeNavigator:new(xmltree)
+    local new_inst = {
+        document = xmltree,
+        current  = xmltree,
+        pos      = {},
+    }
+    setparents(xmltree)
+    setmetatable( new_inst, { __index = NodeNavigator } )
+    return new_inst
+end
+
+function NodeNavigator:root()
+    self.current = self.document
+    return self.current
+end
+
+function NodeNavigator:attributes(name)
+    name = name or "*"
+    local attributes = {}
+    for i = 1, #self.current do
+        local cur = self.current[i]
+        if type(cur) == "table" then
+            for attname, attvalue in pairs(cur.attributes) do
+                if name ~= "*" and attname == name or name == "*" then
+                    table.insert(attributes,{[attname] = attvalue})
+                end
+            end
+        end
+    end
+    self.current = attributes
+end
+
+function NodeNavigator:child(testfunc)
+    local selection = {}
+    if self.current[".__type"] == "document" then
+        for i = 1, #self.current do
+            local cur = self.current[i]
+            if testfunc(cur) then
+                selection[#selection+1] = cur
+            end
+        end
+    else
+        for i = 1, #self.current do
+            local pos = 0
+            for j = 1, #self.current[i] do
+                local cur = self.current[i][j]
+                if testfunc(cur) then
+                    pos = pos + 1
+                    self.pos[cur] = pos
+                    selection[#selection+1] = cur
+                end
+            end
+        end
+    end
+    self.current = selection
+    return selection
+end
+
+local function recurse(where,what)
+    local ret = {}
+    for i = 1, #where do
+        local cur = where[i]
+        if type(cur) == "table" and cur[".__type"] then
+            if what(cur) then
+                table.insert(ret,cur)
+            end
+            local r = recurse(cur,what)
+            for _, value in pairs(r) do
+                table.insert(ret,value)
+            end
+        else
+            if what(cur) then
+                table.insert(ret,cur)
+            end
+
+        end
+    end
+    return ret
+end
+
+function NodeNavigator:descendantorself(withself,what)
+    local selection = {}
+    local start = self.current
+    if start[".__type"] == "document" then start = {start} end
+    if withself then
+        local cur = start
+        local r = recurse(cur,what)
+        for _, value in pairs(r) do
+            table.insert(selection,value)
+        end
+    else
+        for i = 1, #start do
+            local cur = start[i]
+            local r = recurse(cur,what)
+            for _, value in pairs(r) do
+                table.insert(selection,value)
+            end
+        end
+    end
+
+    self.current = selection
+end
+
+
+function NodeNavigator:filter(filterfunc)
+    self.current = filterfunc(self)
+end
+
+
+
+
 return {
     parse = parse,
-    register = register
+    register = register,
+    NodeNavigator = NodeNavigator
 }
