@@ -187,8 +187,17 @@ for _, modname in ipairs(arg) do
         end
     end
 
-    for i, j in pairs(mod) do
-        if string.sub(i, 1, 5) == "test_" and type(j) == "function" then
+    local keys = {}
+    for k,_ in pairs(mod) do
+      keys[#keys + 1] = k
+    end
+    table.sort(keys)
+
+    for i, k in ipairs(keys) do
+        local j = mod[k]
+        if string.sub(k, 1, 5) == "test_" and type(j) == "function" then
+            -- print("\n")
+            -- print(k)
             count_tests = count_tests + 1
             current_function = i
             setup()

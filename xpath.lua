@@ -33,7 +33,16 @@ local function doCompare(cmpfunc, a, b)
     if type(b) == "number" then
         b = {b}
     end
-    local ret = false
+    local taba = {}
+    local tabb = {}
+    for i = 1, #a do
+        taba[i] = tostring(a[i])
+    end
+    for i = 1, #b do
+        tabb[i] = tostring(b[i])
+    end
+    a = taba
+    b = tabb
     for ca = 1, #a do
         for cb = 1, #b do
             if cmpfunc(a[ca], b[cb]) then
@@ -215,7 +224,7 @@ end
 
 -- [3] ExprSingle ::= ForExpr | QuantifiedExpr | IfExpr | OrExpr
 function parseExprSingle(infotbl)
-    enterStep(infotbl, "3 parseExprSinge")
+    enterStep(infotbl, "3 parseExprSingle")
     local nexttok = infotbl.peek()
     local ret
     if nexttok then
@@ -231,7 +240,7 @@ function parseExprSingle(infotbl)
             ret = parseOrExpr(infotbl)
         end
     end
-    leaveStep(infotbl, "3 parseExprSinge")
+    leaveStep(infotbl, "3 parseExprSingle")
     return ret
 end
 
@@ -756,16 +765,27 @@ end
 -- [29] ForwardStep ::= (ForwardAxis NodeTest) | AbbrevForwardStep
 function parseForwardStep(infotbl)
     enterStep(infotbl, "29 parseForwardStep")
-    local ret = parseForwardAxis(infotbl)
-    if ret then
-        ret = parseNodeTest(infotbl)
+    local pfa = parseForwardAxis(infotbl)
+    local pnt,ret
+    if pfa then
+        pnt = parseNodeTest(infotbl)
+        ret = function(ctx) return ctx.nn:child(xpath_test_eltname(pfa)) end
     else
+        local attributes = false
         local nt = infotbl.peek()
-        -- AbbrevForwardStep == "@"? NodeTest
+        -- [31] AbbrevForwardStep == "@"? NodeTest
         if nt and nt[2] == "@" then
             _ = infotbl.nexttok
+            attributes = true
         end
-        ret = parseNodeTest(infotbl)
+        pnt = parseNodeTest(infotbl)
+        if pnt then
+            if attributes then
+                ret = function(ctx) return ctx.nn:attributes(pnt) end
+            else
+                ret = function(ctx) return ctx.nn:child(xpath_test_eltname(pnt)) end
+            end
+        end
     end
     leaveStep(infotbl, "29 parseForwardStep")
     return ret
@@ -775,24 +795,23 @@ end
 function parseForwardAxis(infotbl)
     enterStep(infotbl, "30 parseForwardAxis")
     local nt = infotbl.peek()
-    local nt = infotbl.peek()
     local nt2 = infotbl.peek(2)
     local ret
-    if nt and nt2 then
+    if nt and nt2 and nt2 == "::" then
         local opname = nt[2]
-        local doublecolon = nt2[2]
         if
-            doublecolon == "::" and
-                (opname == "child" or opname == "descendant" or opname == "attribute" or opname == "self" or
+                opname == "child" or opname == "descendant" or opname == "attribute" or opname == "self" or
                     opname == "descendant-or-self" or
                     opname == "following-sibling" or
                     opname == "following" or
-                    opname == "namespace")
+                    opname == "namespace"
          then
             _ = infotbl.nexttok
             _ = infotbl.nexttok
             ret = {}
         end
+    else
+        -- w("else")
     end
     leaveStep(infotbl, "30 parseForwardAxis")
 end
@@ -853,11 +872,29 @@ end
 function parseNameTest(infotbl)
     enterStep(infotbl, "36 parseNameTest")
     local nt = infotbl.peek()
-    if nt and (nt[1] == TOK_QNAME or nt[1] == TOK_NCNAME) then
-        _ = infotbl.nexttok
-        return function(ctx) return ctx.nn:child(xpath_test_eltname(nt[2])) end
+    local nt2 = infotbl.peek(2)
+    local nt3 = infotbl.peek(3)
+    local ret
+    if nt then
+        if nt[1] == TOK_QNAME or nt[1] == TOK_NCNAME and not ( nt2 and nt2[2] == ":" ) then
+            _ = infotbl.nexttok
+            ret = nt[2]
+        elseif nt[2] == "*" and not (nt2 and nt2[2] == ":" ) then
+            _ = infotbl.nexttok
+            ret = nt[2]
+        else
+            if nt2 and nt3 and nt2[2] == ":" then
+                if nt3[2] == "*" or nt[2] == "*" then
+                    _ = infotbl.nexttok
+                    _ = infotbl.nexttok
+                    _ = infotbl.nexttok
+                    ret = table.concat({nt[2],nt2[2],nt3[2]},"")
+                end
+            end
+        end
     end
     leaveStep(infotbl, "36 parseNameTest")
+    return ret
 end
 -- [37]	Wildcard ::= "*" | (NCName ":" "*") | ("*" ":" NCName)
 
@@ -958,23 +995,27 @@ function parseFunctionCall(infotbl)
     local fname = infotbl.nexttok[2]
     infotbl.skiptoken(TOK_OPENPAREN)
     local args = {}
-    local tmp = parseExprSingle(infotbl)
-    args[#args + 1] = tmp
-    while true do
-        local nt = infotbl.peek()
-        if nt then
-            if nt[2] == "," then
-                infotbl.skip(",")
-                args[#args + 1] = parseExprSingle(infotbl)
+    local nt = infotbl.peek()
+    if nt[1] == TOK_CLOSEPAREN then
+        -- no exprSingle, shortcut
+    else
+        local tmp = parseExprSingle(infotbl)
+        args[#args + 1] = tmp
+        while true do
+            nt = infotbl.peek()
+            if nt then
+                if nt[2] == "," then
+                    infotbl.skip(",")
+                    args[#args + 1] = parseExprSingle(infotbl)
+                else
+                    break
+                end
             else
+                w("close paren expected")
                 break
             end
-        else
-            w("close paren expected")
-            break
         end
     end
-
     infotbl.skip(")")
     local prefix = ""
     if match(fname, ":") then
@@ -1264,6 +1305,17 @@ local function fnNormalizeSpace(ctx, args)
     return str
 end
 
+local function fnNot(ctx,args)
+    local arg1 = args[1](ctx)
+    return not arg1
+end
+
+local function fnPosition(ctx,args)
+    -- local pos = ctx.nn.pos[ctx.nn.current]
+    -- w("pos %s",tostring(pos))
+    return 1
+end
+
 local function fnUpperCase(ctx,args)
     local str = get_string_argument(ctx,args,"upper-case")
     return string.upper(str)
@@ -1276,9 +1328,11 @@ end
 register("", "boolean", fnBoolean)
 register("", "count", fnCount)
 register("", "false", fnFalse)
-register("", "normalize-space", fnNormalizeSpace)
 register("", "max",fnMax)
 register("", "min",fnMin)
+register("", "not",fnNot)
+register("", "position",fnPosition)
+register("", "normalize-space", fnNormalizeSpace)
 register("", "upper-case", fnUpperCase)
 register("", "true", fnTrue)
 
@@ -1313,6 +1367,14 @@ function NodeNavigator:root()
     return self.current
 end
 
+local attmt = {
+    __tostring = function (tbl,idx)
+        for k, v in pairs(tbl) do
+            return v
+        end
+    end
+}
+
 function NodeNavigator:attributes(name)
     name = name or "*"
     local attributes = {}
@@ -1321,12 +1383,13 @@ function NodeNavigator:attributes(name)
         if type(cur) == "table" then
             for attname, attvalue in pairs(cur.attributes) do
                 if name ~= "*" and attname == name or name == "*" then
-                    table.insert(attributes,{[attname] = attvalue})
+                    table.insert(attributes,setmetatable({[attname] = attvalue},attmt))
                 end
             end
         end
     end
     self.current = attributes
+    return attributes
 end
 
 function NodeNavigator:child(testfunc)
