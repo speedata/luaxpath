@@ -32,7 +32,7 @@ xmldoctable1 = {
         },
         [5] = "\n    ",
         [6] = {
-            [".__name"] = "subx",
+            [".__name"] = "sub",
             [".__type"] = "element",
             [".__local_name"] = "sub",
             [".__namespace"] = "",

@@ -29,7 +29,6 @@ function eval(str)
     return xpath.parse(str)(ctx)
 end
 
-
 function test_simple()
     assert_equal(eval("1"),1)
     assert_equal(eval("1 + 2"),3)
@@ -79,6 +78,7 @@ function test_functions()
     assert_true(eval("  boolean('false')"))
     assert_false(eval(" boolean('')"))
     assert_false(eval(" boolean( () )"))
+    assert_true(eval(" string( 'abc' ) = 'abc'"))
 end
 
 function test_parse_string(  )
@@ -163,4 +163,11 @@ function test_xmltable1()
     assert_equal(eval("count( / root / @ * ) "),4)
     assert_true(eval(" /root/@one < 2 and /root/@one >= 1 " ))
     assert_false(eval(" /root/@one > 2 and /root/@one <= 1 " ))
+    assert_equal(eval("count( /root/sub[position() mod 2 = 0]) "),1)
+    assert_equal(eval("count( /root/sub[position() mod 2 = 1]) "),2)
+    assert_equal(eval(" string(/root/sub[position() mod 2 = 0]/@foo) "),'bar')
+    assert_equal(eval(" count(/root/sub[3]) "),1)
+    assert_equal(eval(" count(/root/sub[4]) "),0)
+    assert_equal(eval(" count(/root[1]/sub[3]) "),1)
+    assert_equal(eval(" count(/root/sub[3][1]) "),1)
 end

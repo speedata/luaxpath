@@ -27,12 +27,13 @@ end
 local match = string.match
 
 local function doCompare(cmpfunc, a, b)
-    if type(a) == "number" then
+    if type(a) == "number" or type(a) == "string" then
         a = {a}
     end
-    if type(b) == "number" then
+    if type(b) == "number" or type(b) == "string" then
         b = {b}
     end
+
     local taba = {}
     local tabb = {}
     for i = 1, #a do
@@ -757,9 +758,20 @@ function parseAxisStep(infotbl)
     if not ret then
         ret = parseForwardStep(infotbl)
     end
-    parsePredicateList(infotbl)
+    local pl = parsePredicateList(infotbl)
+    local newret = ret
+    if #pl > 0 then
+        newret = function(ctx)
+            ret(ctx)
+            for i = 1, #pl do
+                local predicate = pl[i]
+                ctx.nn:filter(ctx,predicate)
+            end
+            return ctx.nn.current
+        end
+    end
     leaveStep(infotbl, "28 parseAxisStep")
-    return ret
+    return newret
 end
 
 -- [29] ForwardStep ::= (ForwardAxis NodeTest) | AbbrevForwardStep
@@ -913,27 +925,31 @@ end
 -- [39]   	PredicateList ::= Predicate*
 function parsePredicateList(infotbl)
     enterStep(infotbl, "39 parsePredicateList")
+    local pl = {}
     while true do
         local nexttok = infotbl.peek()
         if nexttok == nil then
             break
         elseif nexttok[1] == TOK_OPENBRACKET then
-            parsePredicate(infotbl)
+            pl[#pl+1] = parsePredicate(infotbl)
         else
             break
         end
     end
     leaveStep(infotbl, "39 parsePredicateList")
+    return pl
 end
 
 
 -- [40] Predicate ::= "[" Expr "]"
 function parsePredicate(infotbl)
     enterStep(infotbl, "40 parsePredicate")
+    local ret
     infotbl.skiptoken(TOK_OPENBRACKET)
-    parseExpr(infotbl)
+    ret = parseExpr(infotbl)
     infotbl.skiptoken(TOK_CLOSEBRACKET)
     leaveStep(infotbl, "40 parsePredicate")
+    return ret
 end
 
 -- [41]	PrimaryExpr ::=	Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall
@@ -1311,9 +1327,19 @@ local function fnNot(ctx,args)
 end
 
 local function fnPosition(ctx,args)
-    -- local pos = ctx.nn.pos[ctx.nn.current]
-    -- w("pos %s",tostring(pos))
-    return 1
+    local pos = ctx.nn.pos[ctx.nn.current[1]]
+    return pos
+end
+
+local function fnString(ctx,args)
+    local str = get_string_argument(ctx,args,"string")
+    if type(str) == "string" then return str end
+    local ret = {}
+    for i = 1, #str do
+        local cur = str[i]
+        ret[#ret+1] = tostring(cur)
+    end
+    return table.concat(ret,"")
 end
 
 local function fnUpperCase(ctx,args)
@@ -1333,8 +1359,9 @@ register("", "min",fnMin)
 register("", "not",fnNot)
 register("", "position",fnPosition)
 register("", "normalize-space", fnNormalizeSpace)
-register("", "upper-case", fnUpperCase)
+register("", "string",fnString)
 register("", "true", fnTrue)
+register("", "upper-case", fnUpperCase)
 
 
 local NodeNavigator = {}
@@ -1397,6 +1424,7 @@ function NodeNavigator:child(testfunc)
     if self.current[".__type"] == "document" then
         for i = 1, #self.current do
             local cur = self.current[i]
+            self.pos[cur] = 1
             if testfunc(cur) then
                 selection[#selection+1] = cur
             end
@@ -1464,8 +1492,26 @@ function NodeNavigator:descendantorself(withself,what)
 end
 
 
-function NodeNavigator:filter(filterfunc)
-    self.current = filterfunc(self)
+function NodeNavigator:filter(ctx,predicate)
+    local sel = self.current
+    local res = {}
+    local c = 1
+    for i = 1, #sel do
+        self.current = { sel[i] }
+        local pr = predicate(ctx)
+        if type(pr) == "number" then
+            if pr == self.pos[sel[i]] then
+                res[#res+1] = sel[i]
+                self.pos[sel[i]] = c
+                c = c + 1
+            end
+        elseif pr then
+            res[#res+1] = sel[i]
+            self.pos[sel[i]] = c
+            c = c + 1
+        end
+    end
+    self.current = res
 end
 
 
