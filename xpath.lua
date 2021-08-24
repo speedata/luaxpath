@@ -10,13 +10,9 @@ end
 module(..., package.seeall)
 
 local string = unicode.utf8
+local match = string.match
 
 local stringreader = require("stringreader")
-
--- local round = function(a, prec)
---     return math.floor(a + 0.5 * prec) -- where prec is 10^n, starting at 0
--- end
-
 local xpathfunctions = {}
 
 local function register(ns, name, fun)
@@ -24,9 +20,35 @@ local function register(ns, name, fun)
     xpathfunctions[ns][name] = fun
 end
 
-local match = string.match
+
+local function flattensequence(arg)
+    local ret = {}
+    if type(arg) ~= "table" then return arg end
+    for i = 1, #arg do
+        if type(arg[i]) == "table" then
+            local argi = arg[i]
+            if argi[".__type"] == "element" then
+                ret[#ret + 1] = argi
+            elseif argi[".__type"] == "attribute" then
+                ret[#ret + 1] = tostring(argi)
+            else
+                local tmp = flattensequence(arg[i])
+                for j = 1, #tmp do
+                    ret[#ret+1] = tmp[j]
+                end
+            end
+        else
+            ret[#ret+1] = arg[i]
+        end
+    end
+
+    return ret
+end
 
 local function doCompare(cmpfunc, a, b)
+    a = flattensequence(a)
+    b = flattensequence(b)
+
     if type(a) == "number" or type(a) == "string" then
         a = {a}
     end
@@ -44,6 +66,7 @@ local function doCompare(cmpfunc, a, b)
     end
     a = taba
     b = tabb
+
     for ca = 1, #a do
         for cb = 1, #b do
             if cmpfunc(a[ca], b[cb]) then
@@ -913,13 +936,28 @@ end
 -- [38]	FilterExpr ::= PrimaryExpr PredicateList
 function parseFilterExpr(infotbl)
     enterStep(infotbl, "38 parseFilterExpr")
+    local newret
     local ret
     ret = parsePrimaryExpr(infotbl)
     if ret and not infotbl.eof then
-        parsePredicateList(infotbl)
+        local pl = parsePredicateList(infotbl)
+        if #pl > 0 then
+            newret = function(ctx)
+                ctx.nn.current = ret(ctx)
+                for i = 1, #pl do
+                    local predicate = pl[i]
+                    ctx.nn:filter(ctx,predicate)
+                end
+                return ctx.nn.current
+            end
+        else
+            newret = ret
+        end
+    else
+        newret = ret
     end
     leaveStep(infotbl, "38 parseFilterExpr")
-    return ret
+    return newret
 end
 
 -- [39]   	PredicateList ::= Predicate*
@@ -999,7 +1037,10 @@ end
 function parseParenthesizedExpr(infotbl)
     enterStep(infotbl, "46 parseParenthesizedExpr")
     infotbl.skiptoken(TOK_OPENPAREN)
-    local ret = parseExpr(infotbl)
+    local expr = parseExpr(infotbl)
+    local ret = function (ctx)
+        return flattensequence(expr(ctx))
+    end
     infotbl.skiptoken(TOK_CLOSEPAREN)
     leaveStep(infotbl, "46 parseParenthesizedExpr")
     return ret
@@ -1269,7 +1310,6 @@ local function fnBoolean(ctx,args)
     elseif type(arg) == "table" and #arg == 0 then
         return false
     end
-
 end
 
 local function fnCount(ctx, args)
@@ -1327,7 +1367,7 @@ local function fnNot(ctx,args)
 end
 
 local function fnPosition(ctx,args)
-    local pos = ctx.nn.pos[ctx.nn.current[1]]
+    local pos = ctx.nn.current.pos
     return pos
 end
 
@@ -1382,7 +1422,6 @@ function NodeNavigator:new(xmltree)
     local new_inst = {
         document = xmltree,
         current  = xmltree,
-        pos      = {},
     }
     setparents(xmltree)
     setmetatable( new_inst, { __index = NodeNavigator } )
@@ -1397,7 +1436,9 @@ end
 local attmt = {
     __tostring = function (tbl,idx)
         for k, v in pairs(tbl) do
-            return v
+            if not string.match(k,"^.__") then
+                return v
+            end
         end
     end
 }
@@ -1410,7 +1451,7 @@ function NodeNavigator:attributes(name)
         if type(cur) == "table" then
             for attname, attvalue in pairs(cur.attributes) do
                 if name ~= "*" and attname == name or name == "*" then
-                    table.insert(attributes,setmetatable({[attname] = attvalue},attmt))
+                    table.insert(attributes,setmetatable({[attname] = attvalue, [".__type"] = "attribute" },attmt))
                 end
             end
         end
@@ -1424,7 +1465,7 @@ function NodeNavigator:child(testfunc)
     if self.current[".__type"] == "document" then
         for i = 1, #self.current do
             local cur = self.current[i]
-            self.pos[cur] = 1
+            cur.pos = 1
             if testfunc(cur) then
                 selection[#selection+1] = cur
             end
@@ -1436,7 +1477,7 @@ function NodeNavigator:child(testfunc)
                 local cur = self.current[i][j]
                 if testfunc(cur) then
                     pos = pos + 1
-                    self.pos[cur] = pos
+                    cur.pos = pos
                     selection[#selection+1] = cur
                 end
             end
@@ -1497,17 +1538,25 @@ function NodeNavigator:filter(ctx,predicate)
     local res = {}
     local c = 1
     for i = 1, #sel do
-        self.current = { sel[i] }
+        local cur = sel[i]
+        if type(cur) ~= "table" then
+            self.current = { cur , pos = c }
+            c = c + 1
+        else
+            self.current = cur
+        end
+        cur = self.current
         local pr = predicate(ctx)
+        -- for example ...[1]
         if type(pr) == "number" then
-            if pr == self.pos[sel[i]] then
-                res[#res+1] = sel[i]
-                self.pos[sel[i]] = c
+            if pr == cur.pos then
+                res[#res+1] = cur
+                cur.pos = c
                 c = c + 1
             end
         elseif pr then
-            res[#res+1] = sel[i]
-            self.pos[sel[i]] = c
+            res[#res+1] = cur
+            cur.pos = c
             c = c + 1
         end
     end

@@ -25,30 +25,14 @@ local ctx = {
     }
 }
 
+
 function eval(str)
     return xpath.parse(str)(ctx)
 end
 
-function test_simple()
-    assert_equal(eval("1"),1)
-    assert_equal(eval("1 + 2"),3)
-    assert_equal(eval("2 * $a"),10)
-    assert_equal(eval("$one-two div $a"),2.4)
-    assert_equal(eval("$one-two idiv $a"),2)
-    assert_equal(eval("(1,2,3)"),{1,2,3})
-    assert_equal(eval(" 1 to 3 "),{1,2,3})
-    assert_equal(eval("for $foo in 1 to 3 return $foo"),{1,2,3})
-    assert_equal(eval("(1,2) = (2,3)"),true)
-    assert_equal(eval("(1,2 (: a comment :) ,3)"),{1,2,3})
-    assert_equal(eval(" 10 idiv 3 "), 3)
-    assert_equal(eval(" 3 idiv -2 "), -1)
-    assert_equal(eval(" -3 idiv 2 "), -1)
-    assert_equal(eval(" -3 idiv -2 "), 1)
-    assert_equal(eval(" 9.0 idiv 3 "), 3)
-    assert_equal(eval(" -3.5 idiv 3 "), -1)
-    assert_equal(eval(" 3.0 idiv 4 "), 0)
+function setup()
+    ctx.nn = xpath.NodeNavigator:new(xmldoctable1)
 end
-
 function test_comparison()
     assert_true(eval(" 2 > 4 or 3 > 5 or 6 > 2"))
     assert_true(eval(" 2 > 4 or 3 > 5 or 6 > 2"))
@@ -60,12 +44,21 @@ function test_comparison()
     assert_true(eval(" 'a' = 'a' and 'b' = 'b' "))
     assert_false(eval(" 6 < 4 and 7 > 5 "))
     assert_true(eval(" 2 < 4 and 7 > 5 "))
+    assert_true(eval(" 3 < 6 " ))
+    assert_false(eval(" not( 3 < 6 )" ))
+    assert_true(eval(" 6 > 3 " ))
+    assert_true(eval(" 3 <= 3 " ))
+    assert_true(eval(" 3 = 3 " ))
+    assert_true(eval(" 4 != 3 " ))
+    assert_false(eval( " $two > 3 "))
+    assert_true(eval( " $one = 1 "))
 end
 
 function test_functions()
     assert_true(eval("if ( 1 = 1 ) then true() else false()"))
     assert_false(eval("if ( 1 = 2 ) then true() else false()"))
     assert_equal(eval("count( () )"),0)
+    assert_equal(eval("count( ((),2)  )"),1)
     assert_equal(eval("count( (1,2,3) )"),3)
     assert_equal(eval(" normalize-space('  foo bar baz     ') "), "foo bar baz")
     assert_equal(eval(" upper-case('äöüaou') "), "ÄÖÜAOU")
@@ -81,10 +74,6 @@ function test_functions()
     assert_true(eval(" string( 'abc' ) = 'abc'"))
 end
 
-function test_parse_string(  )
-    assert_equal(eval(" 'ba\"r' "),"ba\"r")
-end
-
 function test_ifthenelse()
     assert_true(eval( " if ( 1 = 1 ) then true() else false()" ))
     assert_false(eval(" if ( 1 = 2 ) then true() else false()" ))
@@ -97,17 +86,14 @@ end
 function test_unaryexpr(  )
     assert_equal(eval(" -4 "), -4)
     assert_equal(eval(" +-+-+4 "), 4)
-    assert_equal(eval(" 4 "), 4)
     assert_equal(eval(" 5 - 1 - 3 "), 1)
-end
-
-function test_paren()
-    assert_equal(eval(" ( 6 + 4 )"), 10)
-    assert_equal(eval(" ( 6 + 4 ) * 2"), 20)
 end
 
 
 function test_parse_arithmetic(  )
+    assert_equal(eval(" 4 "), 4)
+    assert_equal(eval(" -3.2 " ),-3.2)
+    assert_equal(eval(" -3" ),-3)
     assert_equal(eval(" 5"), 5)
     assert_equal(eval(" 3.4 "), 3.4)
     assert_equal(eval(" 'string' "), "string")
@@ -128,38 +114,41 @@ function test_parse_arithmetic(  )
     assert_equal(eval(" 1 - $one"), 0)
     assert_equal(eval("3.4 * $two"), 6.8)
     assert_equal(eval(" $two * 3.4"), 6.8)
-end
-
-function test_comparison(  )
-    assert_true(eval(" 3 < 6 " ))
-    assert_false(eval(" not( 3 < 6 )" ))
-    assert_true(eval(" 6 > 3 " ))
-    assert_true(eval(" 3 <= 3 " ))
-    assert_true(eval(" 3 = 3 " ))
-    assert_true(eval(" 4 != 3 " ))
-    assert_false(eval( " $two > 3 "))
-    assert_true(eval( " $one = 1 "))
+    assert_equal(eval(" ( 6 + 4 )"), 10)
+    assert_equal(eval(" ( 6 + 4 ) * 2"), 20)
+    assert_equal(eval("2 * $a"),10)
+    assert_equal(eval("$one-two div $a"),2.4)
+    assert_equal(eval("$one-two idiv $a"),2)
+    assert_equal(eval("(1,2,3)"),{1,2,3})
+    assert_equal(eval(" 1 to 3 "),{1,2,3})
+    assert_equal(eval("for $foo in 1 to 3 return $foo"),{1,2,3})
+    assert_equal(eval("(1,2) = (2,3)"),true)
+    assert_equal(eval("(1,2 (: a comment :) ,3)"),{1,2,3})
+    assert_equal(eval(" 10 idiv 3 "), 3)
+    assert_equal(eval(" 3 idiv -2 "), -1)
+    assert_equal(eval(" -3 idiv 2 "), -1)
+    assert_equal(eval(" -3 idiv -2 "), 1)
+    assert_equal(eval(" 9.0 idiv 3 "), 3)
+    assert_equal(eval(" -3.5 idiv 3 "), -1)
+    assert_equal(eval(" 3.0 idiv 4 "), 0)
 end
 
 function test_string()
     assert_equal(eval("'aäßc'" ),'aäßc')
     assert_equal(eval('"aäßc"' ),'aäßc')
     assert_equal(eval("  'aäßc'  " ),'aäßc')
+    assert_equal(eval(" 'ba\"r' "),"ba\"r")
 end
 
 function test_multiple()
     assert_equal(eval("3 , 3" ),{3,3})
     assert_equal(eval("(3 , 3)" ),{3,3})
-end
-
-function test_num()
-    assert_equal(eval(" -3.2 " ),-3.2)
-    assert_equal(eval(" -3" ),-3)
+    assert_true(eval("(1,2,3)[2] = 2"))
+    assert_true(eval("( (),2 )[1] = 2"))
 end
 
 function test_xmltable1()
-    ctx.nn = xpath.NodeNavigator:new(xmldoctable1)
-    assert_equal(eval("count( / root / * ) "),3)
+    assert_equal(eval("count( / root / * ) "),5)
     assert_equal(eval("count( / root / @ * ) "),4)
     assert_true(eval(" /root/@one < 2 and /root/@one >= 1 " ))
     assert_false(eval(" /root/@one > 2 and /root/@one <= 1 " ))
@@ -170,4 +159,6 @@ function test_xmltable1()
     assert_equal(eval(" count(/root/sub[4]) "),0)
     assert_equal(eval(" count(/root[1]/sub[3]) "),1)
     assert_equal(eval(" count(/root/sub[3][1]) "),1)
+    assert_true(eval(" ( /root/@doesnotexist , 'str' )[1] = 'str'  "))
+    assert_true(eval(" ( 'str', /root/@doesnotexist  )[1] = 'str'  "))
 end

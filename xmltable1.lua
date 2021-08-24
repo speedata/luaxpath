@@ -51,7 +51,49 @@ xmldoctable1 = {
                 [1] = "contents subsub 1",
             },
         },
-        [7] = "\n",
+        [7] = "\n    ",
+        [8] = {
+            [".__name"] = "other",
+            [".__type"] = "element",
+            [".__local_name"] = "other",
+            [".__namespace"] = "",
+            [".__ns"] = {
+            },
+            attributes = { ["foo"] = "barbaz"},
+            [1] = "contents other",
+            [2] = {
+                [".__name"] = "subsub",
+                [".__type"] = "element",
+                [".__local_name"] = "subsub",
+                [".__namespace"] = "",
+                [".__ns"] = {
+                },
+                attributes = { ["foo"] = "oof"},
+                [1] = "contents subsub other",
+            },
+        },
+        [9] = "\n    ",
+        [10] = {
+            [".__name"] = "other",
+            [".__type"] = "element",
+            [".__local_name"] = "other",
+            [".__namespace"] = "",
+            [".__ns"] = {
+            },
+            attributes = { ["foo"] = "other2"},
+            [1] = "contents other",
+            [2] = {
+                [".__name"] = "subsub",
+                [".__type"] = "element",
+                [".__local_name"] = "subsub",
+                [".__namespace"] = "",
+                [".__ns"] = {
+                },
+                attributes = { ["foo"] = "subsub2"},
+                [1] = "contents subsub other2",
+            },
+        },
+        [11] = "\n",
     },
 }
 

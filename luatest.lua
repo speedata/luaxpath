@@ -59,7 +59,12 @@ function array_to_string(a)
 end
 
 local function row()
-    return debug.traceback():explode("\n")[4]:gsub("^.*:(%d+):.*$", "%1")
+    local dt = debug.traceback()
+    lines = {}
+    for s in dt:gmatch("[^\r\n]+") do
+        table.insert(lines, s)
+    end
+    return lines[4]:gsub("^.*:(%d+):.*$", "%1")
 end
 
 function assert_equal(a, b, msg)
@@ -196,10 +201,8 @@ for _, modname in ipairs(arg) do
     for i, k in ipairs(keys) do
         local j = mod[k]
         if string.sub(k, 1, 5) == "test_" and type(j) == "function" then
-            -- print("\n")
-            -- print(k)
             count_tests = count_tests + 1
-            current_function = i
+            current_function = k
             setup()
             j()
             teardown()
@@ -214,5 +217,7 @@ if some_tests_failed == true then
     print("tests failed.")
     os.exit(1)
 end
+
+print("All tests passed. Great!")
 
 os.exit(0)
