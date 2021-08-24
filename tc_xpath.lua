@@ -1,4 +1,3 @@
-module(...,package.seeall)
 
 local xpath = require("xpath")
 
@@ -26,14 +25,16 @@ local ctx = {
 }
 
 
-function eval(str)
+local function eval(str)
     return xpath.parse(str)(ctx)
 end
 
-function setup()
+local test = {}
+
+function test.setup()
     ctx.nn = xpath.NodeNavigator:new(xmldoctable1)
 end
-function test_comparison()
+function test.test_comparison()
     assert_true(eval(" 2 > 4 or 3 > 5 or 6 > 2"))
     assert_true(eval(" 2 > 4 or 3 > 5 or 6 > 2"))
     assert_true(eval(" true() or false() "))
@@ -54,7 +55,7 @@ function test_comparison()
     assert_true(eval( " $one = 1 "))
 end
 
-function test_functions()
+function test.test_functions()
     assert_true(eval("if ( 1 = 1 ) then true() else false()"))
     assert_false(eval("if ( 1 = 2 ) then true() else false()"))
     assert_equal(eval("count( () )"),0)
@@ -74,7 +75,7 @@ function test_functions()
     assert_true(eval(" string( 'abc' ) = 'abc'"))
 end
 
-function test_ifthenelse()
+function test.test_ifthenelse()
     assert_true(eval( " if ( 1 = 1 ) then true() else false()" ))
     assert_false(eval(" if ( 1 = 2 ) then true() else false()" ))
     assert_equal(eval(" if ( true() ) then 1 else 2"),1)
@@ -83,14 +84,14 @@ function test_ifthenelse()
     assert_equal(eval(" if ( true() ) then 'a' else 'b'"),"a")
 end
 
-function test_unaryexpr(  )
+function test.test_unaryexpr(  )
     assert_equal(eval(" -4 "), -4)
     assert_equal(eval(" +-+-+4 "), 4)
     assert_equal(eval(" 5 - 1 - 3 "), 1)
 end
 
 
-function test_parse_arithmetic(  )
+function test.test_parse_arithmetic(  )
     assert_equal(eval(" 4 "), 4)
     assert_equal(eval(" -3.2 " ),-3.2)
     assert_equal(eval(" -3" ),-3)
@@ -133,21 +134,21 @@ function test_parse_arithmetic(  )
     assert_equal(eval(" 3.0 idiv 4 "), 0)
 end
 
-function test_string()
+function test.test_string()
     assert_equal(eval("'aäßc'" ),'aäßc')
     assert_equal(eval('"aäßc"' ),'aäßc')
     assert_equal(eval("  'aäßc'  " ),'aäßc')
     assert_equal(eval(" 'ba\"r' "),"ba\"r")
 end
 
-function test_multiple()
+function test.test_multiple()
     assert_equal(eval("3 , 3" ),{3,3})
     assert_equal(eval("(3 , 3)" ),{3,3})
     assert_true(eval("(1,2,3)[2] = 2"))
     assert_true(eval("( (),2 )[1] = 2"))
 end
 
-function test_xmltable1()
+function test.test_xmltable1()
     assert_equal(eval("count( / root / * ) "),5)
     assert_equal(eval("count( / root / @ * ) "),4)
     assert_true(eval(" /root/@one < 2 and /root/@one >= 1 " ))
@@ -162,3 +163,5 @@ function test_xmltable1()
     assert_true(eval(" ( /root/@doesnotexist , 'str' )[1] = 'str'  "))
     assert_true(eval(" ( 'str', /root/@doesnotexist  )[1] = 'str'  "))
 end
+
+return test

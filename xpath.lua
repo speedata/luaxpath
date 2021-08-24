@@ -7,9 +7,21 @@ if disable_debug then
     function leaveStep() end
 end
 
-module(..., package.seeall)
 
-local string = unicode.utf8
+-- texlua has slnunicode, otherwise you should use lua-utf8 from luarocks
+if unicode and unicode.utf8 then
+    string = unicode.utf8
+else
+    local utf8 = require 'lua-utf8'
+    if utf8 then
+        local rep = string.rep
+        local format = string.format
+        string = utf8
+        string.rep = rep
+        string.format = format
+    end
+end
+
 local match = string.match
 
 local stringreader = require("stringreader")
@@ -1020,6 +1032,7 @@ function parsePrimaryExpr(infotbl)
     elseif nexttoktype == TOK_OPENPAREN then
         return parseParenthesizedExpr(infotbl)
     elseif nexttoktype == TOK_OPERATOR and nexttokvalue == "." then
+        _ = infotbl.nexttok
         w("context item")
     elseif nexttoktype == TOK_QNAME or nexttoktype == TOK_NCNAME then
         local op = infotbl.peek(2)
@@ -1242,7 +1255,7 @@ local function parse(str)
             sr:getc()
             tok = get_word(sr)
             table.insert(tokenlist, {TOK_VAR, tok})
-        elseif match(c, "[,=/>[<-*!+|?@%]:]") then
+        elseif match(c, "[,=/>[<%-*!+|?@%]:.]") then
             -- ',', =, >=, >>, >, [, <=, <<, <, -, *, !=, +, //, /, |
             local op = sr:getc()
 
@@ -1270,6 +1283,8 @@ local function parse(str)
             elseif op == ":" and sr:peek() == ":" then
                 op = "::"
                 sr:getc()
+            elseif op == "." then
+                -- ok
             end
             table.insert(tokenlist, {TOK_OPERATOR, op})
         elseif match(c, "'") or match(c, '"') then

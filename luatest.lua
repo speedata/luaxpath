@@ -1,6 +1,4 @@
-#!/usr/bin/env texlua
-
-local starttime = os.gettimeofday()
+#!/usr/bin/env lua
 
 local io = io
 
@@ -211,7 +209,7 @@ for _, modname in ipairs(arg) do
 end
 
 print(string.format("\n%d tests, %d assertions - with errors: %d", count_tests, count_assertions, count_errors))
-print("Finished in " .. format("%.3f seconds.", os.gettimeofday() - starttime))
+print("Finished")
 
 if some_tests_failed == true then
     print("tests failed.")
