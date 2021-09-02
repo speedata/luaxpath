@@ -26,14 +26,12 @@ local ctx = {
 
 
 local function eval(str)
+    ctx.nn = xpath.NodeNavigator:new(xmldoctable1)
     return xpath.parse(str)(ctx)
 end
 
 local test = {}
 
-function test.setup()
-    ctx.nn = xpath.NodeNavigator:new(xmldoctable1)
-end
 function test.test_comparison()
     assert_true(eval(" 2 > 4 or 3 > 5 or 6 > 2"))
     assert_true(eval(" 2 > 4 or 3 > 5 or 6 > 2"))
@@ -53,27 +51,90 @@ function test.test_comparison()
     assert_true(eval(" 4 != 3 " ))
     assert_false(eval( " $two > 3 "))
     assert_true(eval( " $one = 1 "))
+    assert_equal(eval(" (((3)))  "),3)
 end
 
 function test.test_functions()
     assert_true(eval("if ( 1 = 1 ) then true() else false()"))
     assert_false(eval("if ( 1 = 2 ) then true() else false()"))
-    assert_equal(eval("count( () )"),0)
-    assert_equal(eval("count( ((),2)  )"),1)
-    assert_equal(eval("count( (1,2,3) )"),3)
-    assert_equal(eval(" normalize-space('  foo bar baz     ') "), "foo bar baz")
-    assert_equal(eval(" upper-case('äöüaou') "), "ÄÖÜAOU")
-    assert_equal(eval(" max(1,2,3) "), 3)
-    assert_equal(eval(" min(1,2,3) "), 1)
+    assert_equal(eval(" abs( 2 )"),2)
+    assert_equal(eval(" abs( -2 )"),2)
+    assert_equal(eval(" abs( -3.7 )"),3.7)
+    assert_equal(eval(" abs( -1.0e-7 )"),1e-7)
+    assert_nan(eval(" abs( number('NaN') )") )
     assert_true(eval("  boolean(1)"))
     assert_false(eval(" boolean(0)"))
     assert_false(eval(" boolean(false())"))
     assert_true(eval("  boolean(true())"))
+    assert_false(eval(" boolean( (false()) )"))
+    assert_true(eval("  boolean( (true()) )"))
     assert_true(eval("  boolean('false')"))
     assert_false(eval(" boolean('')"))
     assert_false(eval(" boolean( () )"))
+
+    assert_equal(eval("ceiling(1.0)"),1)
+    assert_equal(eval("ceiling(1.6)"),2)
+    assert_equal(eval("ceiling( 17 div 3)"),6)
+    assert_equal(eval("ceiling( -3 )"), -3)
+    assert_equal(eval("ceiling( -8.2e0 )"), -8.0e0)
+    assert_nan(eval("ceiling( 'xxx' )"))
+    assert_equal(eval("ceiling( -0.5e0 )"), -0)
+
+    assert_equal(eval("concat('a','b')"),'ab')
+    assert_equal(eval("concat('a',$two)"),'a2')
+    assert_equal(eval("concat('a',$two,$one-two)"),'a212')
+
+    assert_equal(eval("count( () )"),0)
+    assert_equal(eval("count( ((),2)  )"),1)
+    assert_equal(eval("count( (1,2,3) )"),3)
+
+    assert_true(eval(" empty( () ) "))
+    assert_true(eval(" empty( /root/doesnotexist ) "))
+    assert_true(eval(" empty( /root/@doesnotexist ) "))
+    assert_false(eval(" empty( /root/@empty ) "))
+
+    assert_equal(eval("floor(1.0)"),1)
+    assert_equal(eval("floor(1.6e0)"),1)
+    assert_equal(eval("floor( 17 div 3)"),5)
+    assert_equal(eval("floor( -3 )"), -3)
+    assert_equal(eval("floor( -8.2e0 )"), -9)
+    assert_nan(eval("floor( 'xxx' )"))
+    assert_equal(eval("floor( -0.5e0 )"), -1)
+
+    assert_equal(eval("/root/local-name()"), 'root')
+    assert_equal(eval("local-name(/root)"), 'root')
+    assert_equal(eval("/local-name()"), '')
+    assert_equal(eval("local-name(/)"), '')
+    assert_equal(eval("local-name(/root/@foo)"), 'foo')
+    assert_equal(eval("string(/*/@*[.='no'])"), 'no')
+    assert_equal(eval("local-name(/*/@*[.='no'])"), 'foo')
+    assert_equal(eval("/root/sub/3"), {3,3,3})
+    assert_equal(eval("/root/sub/last()"), {3,3,3})
+    assert_equal(eval("string(/root/sub[last()])"), 'contents sub3contents subsub 1')
+
+    assert_equal(eval(" max( (1,2,3) ) "), 3)
+    assert_equal(eval(" min( (1,2,3) ) "), 1)
+    assert_equal(eval(" normalize-space('  foo bar baz     ') "), "foo bar baz")
+
+    assert_equal(eval(" round(3.2) "),3)
+    assert_equal(eval(" round(7.5) "),8)
+    assert_equal(eval(" round(-7.5) "),-7)
+    assert_equal(eval(" round(-0.0e0)) "),-0)
+    assert_equal(eval(" round( 4.6e0 ) "),5)
+
     assert_true(eval(" string( 'abc' ) = 'abc'"))
+
+    assert_equal(eval("string-join(('a', 'b', 'c'), ', ')"),"a, b, c")
+    assert_equal(eval("string-join(('A', 'B', 'C'), '')"),"ABC")
+    assert_equal(eval("string-join((), '∼') "), "")
+
+    assert_equal(eval("string-length('a')"),1)
+    assert_equal(eval("string-length('ä')"),1)
+    assert_equal(eval("string-length('')"),0)
+
+    assert_equal(eval(" upper-case('äöüaou') "), "ÄÖÜAOU")
 end
+
 
 function test.test_ifthenelse()
     assert_true(eval( " if ( 1 = 1 ) then true() else false()" ))
@@ -146,6 +207,7 @@ function test.test_multiple()
     assert_equal(eval("(3 , 3)" ),{3,3})
     assert_true(eval("(1,2,3)[2] = 2"))
     assert_true(eval("( (),2 )[1] = 2"))
+    assert_equal(eval("( 1,2,(),3 )"),{1,2,3})
 end
 
 function test.test_xmltable1()
@@ -160,6 +222,9 @@ function test.test_xmltable1()
     assert_equal(eval(" count(/root/sub[4]) "),0)
     assert_equal(eval(" count(/root[1]/sub[3]) "),1)
     assert_equal(eval(" count(/root/sub[3][1]) "),1)
+    assert_equal(eval(" /root/sub[@foo='bar']/last()"),{2,2})
+    assert_equal(eval(" count(/root/sub[@foo='bar']/last())"),2)
+    assert_equal(eval("(/root/sub[@foo='bar']/last())[1]"),2)
     assert_true(eval(" ( /root/@doesnotexist , 'str' )[1] = 'str'  "))
     assert_true(eval(" ( 'str', /root/@doesnotexist  )[1] = 'str'  "))
 end

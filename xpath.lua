@@ -45,21 +45,45 @@ local function flattensequence(arg)
                 ret[#ret + 1] = tostring(argi)
             else
                 local tmp = flattensequence(arg[i])
-                for j = 1, #tmp do
-                    ret[#ret+1] = tmp[j]
+                if type(tmp) == "table" then
+                    for j = 1, #tmp do
+                        ret[#ret+1] = tmp[j]
+                    end
+                else
+                    ret[#ret+1] = tmp
                 end
             end
         else
             ret[#ret+1] = arg[i]
         end
     end
-
+    if #ret == 1 then return ret[1] end
     return ret
 end
 
+local function isEmptySequence(arg)
+    if arg == nil then return true end
+    while true do
+        if type(arg) == "table" and #arg == 1 and not arg[".__type"] then
+            arg = arg[1]
+        else
+            break
+        end
+    end
+    return type(arg) == "table" and next(arg) == nil
+end
+
 local function doCompare(cmpfunc, a, b)
-    a = flattensequence(a)
-    b = flattensequence(b)
+    if type(a) == "table" and a[".__type"] == "attribute" then
+        a = tostring(a)
+    else
+        a = flattensequence(a)
+    end
+    if type(b) == "table" and b[".__type"] == "attribute" then
+        b = tostring(b)
+    else
+        b = flattensequence(b)
+    end
 
     if type(a) == "number" or type(a) == "string" then
         a = {a}
@@ -135,6 +159,27 @@ local function get_num(sr)
             break
         end
     end
+
+    if not sr:eof() and string.lower(sr:peek()) == "e" then
+        table.insert(ret, "e")
+        sr:getc()
+        if not sr:eof() and string.lower(sr:peek()) == "-" then table.insert(ret, "-") sr:getc() end
+
+        while true do
+            if sr:eof() then
+                break
+            end
+            local c = sr:getc()
+            if match(c, "[%d.]") then
+                table.insert(ret, c)
+            else
+                sr:back()
+                break
+            end
+
+        end
+    end
+
     return table.concat(ret, "")
 end
 
@@ -227,6 +272,9 @@ local TOK_OPENBRACKET = 12
 local TOK_CLOSEBRACKET = 13
 local TOK_QNAME = 14
 local TOK_NCNAME = 15
+
+
+local opBooleanEqual
 
 -- [2] Expr ::= ExprSingle ("," ExprSingle)*
 function parseExpr(infotbl)
@@ -341,12 +389,35 @@ function parseIfExpr(infotbl)
     leaveStep(infotbl, "7 parseIfExpr")
     return function(ctx)
         assert(ctx)
-        if test(ctx) then
+        if opBooleanEqual(test(ctx),true) then
             return thenpart(ctx)
         else
             return elsepart(ctx)
         end
     end
+end
+
+
+local function booleanValue(arg)
+    if arg == nil then return false end
+    if tonumber(arg) then
+        return tonumber(arg) ~= 0
+    elseif type(arg) == "boolean" then
+        return arg
+    elseif type(arg) == "string" then
+        return #arg > 0
+    elseif type(arg) == "table" and #arg == 0 then
+        return false
+    elseif type(arg) == "table" and #arg == 1 then
+        return booleanValue(arg[1])
+    end
+    return true
+end
+
+function opBooleanEqual(a,b)
+    local a = booleanValue(a)
+    local b = booleanValue(b)
+    return a == b
 end
 
 -- [8] OrExpr ::= AndExpr ( "or" AndExpr )*
@@ -589,9 +660,12 @@ function parseMultiplicativeExpr(infotbl)
     return function(ctx)
         if #tbl == 0 then
             return tbl
+        elseif #tbl == 1 then
+            return tbl[1](ctx)
         end
         local cur
         cur = tbl[1](ctx)
+        cur = flattensequence(cur)
         local i = 1
         while i < #tbl do
             if tbl[i + 1] == "*" then
@@ -749,14 +823,16 @@ function parseRelativePathExpr(infotbl)
             infotbl.skip(nt[2])
             nt = infotbl.peek()
             local f
-            if nt[2] == "*" then
-                infotbl.skip("*")
-                f = function(ctx) return ctx.nn:child(xpath_test_eltname("*")) end
-            else
-                local tmp = parseStepExpr(infotbl)
-                f = function(ctx)
-                    return tmp(ctx)
+            local tmp = parseStepExpr(infotbl)
+            f = function(ctx)
+                local save_current = ctx.nn.current
+                local seret = {}
+                for i = 1, #save_current do
+                    ctx.nn.current = save_current[i]
+                    local x = tmp(ctx)
+                    table.insert(seret,x)
                 end
+                return seret
             end
             ret[#ret+1] = f
         else
@@ -812,6 +888,7 @@ end
 -- [29] ForwardStep ::= (ForwardAxis NodeTest) | AbbrevForwardStep
 function parseForwardStep(infotbl)
     enterStep(infotbl, "29 parseForwardStep")
+    -- ForwardAxis is something like child:: descendant::
     local pfa = parseForwardAxis(infotbl)
     local pnt,ret
     if pfa then
@@ -1021,19 +1098,15 @@ function parsePrimaryExpr(infotbl)
         end
     elseif nexttoktype == TOK_NUMBER then
         nexttok = infotbl.nexttok[2]
-        ret = function()
-            return tonumber(nexttok)
-        end
+        ret = function() return tonumber(nexttok) end
     elseif nexttoktype == TOK_VAR then
         local varname = infotbl.nexttok[2]
-        return function(ctx)
-            return ctx.var[varname]
-        end
+        ret = function(ctx) return ctx.var[varname] end
     elseif nexttoktype == TOK_OPENPAREN then
-        return parseParenthesizedExpr(infotbl)
+        ret = parseParenthesizedExpr(infotbl)
     elseif nexttoktype == TOK_OPERATOR and nexttokvalue == "." then
         _ = infotbl.nexttok
-        w("context item")
+        ret = function(ctx) return ctx.nn.current end
     elseif nexttoktype == TOK_QNAME or nexttoktype == TOK_NCNAME then
         local op = infotbl.peek(2)
         if op and op[1] == TOK_OPENPAREN then
@@ -1052,7 +1125,9 @@ function parseParenthesizedExpr(infotbl)
     infotbl.skiptoken(TOK_OPENPAREN)
     local expr = parseExpr(infotbl)
     local ret = function (ctx)
-        return flattensequence(expr(ctx))
+        local seq = expr(ctx)
+        if isEmptySequence(seq) then return nil end
+        return seq
     end
     infotbl.skiptoken(TOK_CLOSEPAREN)
     leaveStep(infotbl, "46 parseParenthesizedExpr")
@@ -1309,6 +1384,11 @@ local function get_string_argument(ctx,args,fromwhere)
     return args[1](ctx)
 end
 
+local function fnAbs(ctx,args)
+    local firstarg = args[1](ctx)
+    return math.abs(firstarg)
+end
+
 
 local function fnBoolean(ctx,args)
     if #args ~= 1 then
@@ -1316,38 +1396,103 @@ local function fnBoolean(ctx,args)
         return false
     end
     local arg = args[1](ctx)
-    if tonumber(arg) then
-        return tonumber(arg) ~= 0
-    elseif type(arg) == "boolean" then
-        return arg
-    elseif type(arg) == "string" then
-        return #arg > 0
-    elseif type(arg) == "table" and #arg == 0 then
-        return false
+    return booleanValue(arg)
+end
+
+local function fnCeiling(ctx,args)
+    local arg = args[1](ctx)
+    if not tonumber(arg) then return 0/0 end
+    return math.ceil(arg)
+end
+
+local function fnConcat(ctx,args)
+    local ret = ""
+    for i=1,#args do
+        local arg = args[i](ctx)
+        ret = ret .. tostring(arg)
     end
+    return ret
 end
 
 local function fnCount(ctx, args)
-    if #args ~= 1 then
-        w("error, one argument expected")
-        return
+    local arg = args[1](ctx) or {}
+    while true do
+        if type(arg) == "table" and #arg == 1 and not arg[".__type"] and not ( type(arg[1]) == "table" and arg[1][".__type"]  ) then
+            arg = arg[1]
+        else
+            break
+        end
     end
-    args = args[1](ctx)
-    return #args
+
+    if type(arg) ~= "table" then return 1 end
+    local c = 0
+
+    for i = 1, #arg do
+        if not isEmptySequence(arg[i]) then
+            c = c + 1
+        end
+    end
+    return c
+end
+
+local function fnEmpty(ctx,args)
+    local arg = args[1](ctx) or {}
+    return isEmptySequence(arg)
 end
 
 local function fnFalse(ctx, args)
     return false
 end
 
-local function fnMax(ctx,args)
-    local max = tonumber(args[1](ctx))
-    if not max then
-        w("First argument in max() is not a number, returning 0")
-        return 0
+local function fnFloor(ctx,args)
+    local arg = args[1](ctx)
+    if not tonumber(arg) then return 0/0 end
+    return math.floor(arg)
+end
+
+local function fnLast(ctx,args)
+    local cur = ctx.nn.current
+    if type(arg) == "table" and not(arg[".__type"] ) then
+        return cur[".__last"]
     end
-    for i=2,#args do
-        local argn = args[i](ctx)
+end
+
+local function fnLocalname(ctx,args)
+    local arg
+    if #args == 0 then
+        arg = ctx.nn.current
+    else
+        arg = args[1](ctx)
+    end
+
+    while true do
+        if type(arg) == "table" and #arg == 1 and not arg[".__type"] then
+            arg = arg[1]
+        else
+            break
+        end
+    end
+
+    if type(arg) == "table" and arg[".__type"] == "element" then
+        return arg[".__local_name"]
+    elseif type(arg) == "table" and arg[".__type"] == "attribute" then
+        for key, _ in pairs(arg) do
+            if not( match(key,"^.__") )  then
+                return key
+            end
+        end
+    end
+
+    return ""
+end
+
+local function fnMax(ctx,args)
+    local tbl = args[1](ctx)
+    if #tbl < 2 then return tbl[1] end
+    local max = tbl[1]
+
+    for i=2,#tbl do
+        local argn = tbl[i]
         if tonumber(argn) and tonumber(argn) > max then
             max = tonumber(argn)
         end
@@ -1356,13 +1501,12 @@ local function fnMax(ctx,args)
 end
 
 local function fnMin(ctx,args)
-    local min = tonumber(args[1](ctx))
-    if not min then
-            w("First argument in min() is not a number, returning 0")
-        return 0
-    end
-    for i=2,#args do
-        local argn = args[i](ctx)
+    local tbl = args[1](ctx)
+    if #tbl < 2 then return tbl[1] end
+    local min = tbl[1]
+
+    for i=2,#tbl do
+        local argn = tbl[i]
         if tonumber(argn) and tonumber(argn) < min then
             min = tonumber(argn)
         end
@@ -1381,20 +1525,70 @@ local function fnNot(ctx,args)
     return not arg1
 end
 
+local function fnNumber(ctx,args)
+    local arg1 = args[1](ctx)
+    if arg1 == 'NaN' then return 0/0 end
+    return tonumber(arg1)
+end
+
 local function fnPosition(ctx,args)
-    local pos = ctx.nn.current.pos
+    local pos = ctx.nn.current[".__pos"]
     return pos
+end
+
+local function fnRound(ctx,args)
+    local arg1 = args[1](ctx)
+    return math.floor(tonumber(arg1) + 0.5)
+end
+
+local function stringvalue(arg)
+    local ret = {}
+    if type(arg) == "table" then
+        if arg[".__type"] == "element" then
+            for i = 1, #arg do
+                ret[#ret+1] = stringvalue(arg[i])
+            end
+        else
+            ret[#ret+1] = tostring(arg)
+        end
+    else
+        ret[#ret+1] = tostring(arg)
+    end
+    return table.concat(ret,"")
 end
 
 local function fnString(ctx,args)
     local str = get_string_argument(ctx,args,"string")
     if type(str) == "string" then return str end
-    local ret = {}
-    for i = 1, #str do
-        local cur = str[i]
-        ret[#ret+1] = tostring(cur)
+
+    while true do
+        if type(str) == "table" and #str == 1 and not str[".__type"] then
+            str = str[1]
+        else
+            break
+        end
     end
-    return table.concat(ret,"")
+    return stringvalue(str)
+end
+
+local function fnStringJoin(ctx,args)
+    local seq = args[1](ctx) or {}
+    local joiner = args[2](ctx)
+    local ret = {}
+    for i = 1, #seq do
+        table.insert(ret,seq[i])
+    end
+    return table.concat(ret,joiner)
+end
+
+local function fnStringLength(ctx,args)
+    if #args == 0 then return 0 end
+    local str = args[1](ctx)
+    return utf8.len(str)
+end
+
+local function fnTrue(ctx, args)
+    return true
 end
 
 local function fnUpperCase(ctx,args)
@@ -1402,19 +1596,26 @@ local function fnUpperCase(ctx,args)
     return string.upper(str)
 end
 
-local function fnTrue(ctx, args)
-    return true
-end
-
+register("", "abs", fnAbs)
 register("", "boolean", fnBoolean)
-register("", "count", fnCount)
+register("", "ceiling", fnCeiling)
+register("", "concat", fnConcat)
+register("", "count", fnCount,1,1)
+register("", "empty", fnEmpty,1,1)
 register("", "false", fnFalse)
-register("", "max",fnMax)
-register("", "min",fnMin)
+register("", "floor", fnFloor)
+register("", "last", fnLast,0,0)
+register("", "local-name", fnLocalname,0,1)
+register("", "max",fnMax,1,1)
+register("", "min",fnMin,1,1)
 register("", "not",fnNot)
-register("", "position",fnPosition)
 register("", "normalize-space", fnNormalizeSpace)
+register("", "number",fnNumber)
+register("", "position",fnPosition)
+register("", "round", fnRound,1,1)
 register("", "string",fnString)
+register("", "string-join", fnStringJoin,2,2)
+register("", "string-length", fnStringLength,0,1)
 register("", "true", fnTrue)
 register("", "upper-case", fnUpperCase)
 
@@ -1436,7 +1637,6 @@ end
 function NodeNavigator:new(xmltree)
     local new_inst = {
         document = xmltree,
-        current  = xmltree,
     }
     setparents(xmltree)
     setmetatable( new_inst, { __index = NodeNavigator } )
@@ -1461,13 +1661,11 @@ local attmt = {
 function NodeNavigator:attributes(name)
     name = name or "*"
     local attributes = {}
-    for i = 1, #self.current do
-        local cur = self.current[i]
-        if type(cur) == "table" then
-            for attname, attvalue in pairs(cur.attributes) do
-                if name ~= "*" and attname == name or name == "*" then
-                    table.insert(attributes,setmetatable({[attname] = attvalue, [".__type"] = "attribute" },attmt))
-                end
+    local cur = self.current
+    if type(cur) == "table" then
+        for attname, attvalue in pairs(cur.attributes) do
+            if name ~= "*" and attname == name or name == "*" then
+                table.insert(attributes,setmetatable({[attname] = attvalue, [".__type"] = "attribute" },attmt))
             end
         end
     end
@@ -1480,23 +1678,24 @@ function NodeNavigator:child(testfunc)
     if self.current[".__type"] == "document" then
         for i = 1, #self.current do
             local cur = self.current[i]
-            cur.pos = 1
+            cur[".__pos"] = 1
             if testfunc(cur) then
                 selection[#selection+1] = cur
             end
         end
     else
-        for i = 1, #self.current do
-            local pos = 0
-            for j = 1, #self.current[i] do
-                local cur = self.current[i][j]
-                if testfunc(cur) then
-                    pos = pos + 1
-                    cur.pos = pos
-                    selection[#selection+1] = cur
-                end
+        local pos = 0
+        for j = 1, #self.current do
+            local cur = self.current[j]
+            if testfunc(cur) then
+                pos = pos + 1
+                cur[".__pos"] = pos
+                selection[#selection+1] = cur
             end
         end
+    end
+    for i = 1, #selection do
+        selection[i][".__last"] = #selection
     end
     self.current = selection
     return selection
@@ -1552,10 +1751,11 @@ function NodeNavigator:filter(ctx,predicate)
     local sel = self.current
     local res = {}
     local c = 1
+    if type(sel) ~= "table" then return sel end
     for i = 1, #sel do
         local cur = sel[i]
         if type(cur) ~= "table" then
-            self.current = { cur , pos = c }
+            self.current = { cur , [".__pos"] = c }
             c = c + 1
         else
             self.current = cur
@@ -1564,17 +1764,21 @@ function NodeNavigator:filter(ctx,predicate)
         local pr = predicate(ctx)
         -- for example ...[1]
         if type(pr) == "number" then
-            if pr == cur.pos then
+            if pr == cur[".__pos"] then
                 res[#res+1] = cur
-                cur.pos = c
+                cur[".__pos"] = c
                 c = c + 1
             end
-        elseif pr then
+        elseif booleanValue(pr) then
             res[#res+1] = cur
-            cur.pos = c
+            cur[".__pos"] = c
             c = c + 1
         end
     end
+    for i = 1, #res do
+        res[i][".__last"] = #res
+    end
+
     self.current = res
 end
 

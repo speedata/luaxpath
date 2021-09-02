@@ -24,6 +24,35 @@ local function failed()
     some_tests_failed = true
 end
 
+
+local function flattensequence(arg)
+    local ret = {}
+    if type(arg) ~= "table" then return arg end
+    for i = 1, #arg do
+        if type(arg[i]) == "table" then
+            local argi = arg[i]
+            if argi[".__type"] == "element" then
+                ret[#ret + 1] = argi
+            elseif argi[".__type"] == "attribute" then
+                ret[#ret + 1] = tostring(argi)
+            else
+                local tmp = flattensequence(arg[i])
+                if type(tmp) == "table" then
+                    for j = 1, #tmp do
+                        ret[#ret+1] = tmp[j]
+                    end
+                else
+                    ret[#ret+1] = tmp
+                end
+            end
+        else
+            ret[#ret+1] = arg[i]
+        end
+    end
+    if #ret == 1 then return ret[1] end
+    return ret
+end
+
 local function compare_tables(a, b) -- http://lua-users.org/lists/lua-l/2008-12/msg00442.html
     local bi = nil
 
@@ -65,7 +94,33 @@ local function row()
     return lines[4]:gsub("^.*:(%d+):.*$", "%1")
 end
 
+local function isNaN( v ) return type( v ) == "number" and v ~= v end
+
+-- assert that the result of a is NaN (not a number)
+function assert_nan(a, msg)
+    a = flattensequence(a)
+    if isNaN(a) then passed() return end
+
+    if msg then
+        print(msg)
+    else
+        print(
+            string.format(
+                "'%s' expected to be NaN.\nFile: %s, function: %s:%d",
+                tostring(a),
+                current_file,
+                current_function,
+                row()
+            )
+        )
+    end
+    failed()
+end
+
 function assert_equal(a, b, msg)
+    a = flattensequence(a)
+    b = flattensequence(b)
+
     if type(a) == "table" and type(b) == "table" then
         setmetatable(a, {__tostring = array_to_string, __eq = compare_tables})
         setmetatable(b, {__tostring = array_to_string, __eq = compare_tables})
@@ -78,12 +133,12 @@ function assert_equal(a, b, msg)
         else
             print(
                 string.format(
-                    "'%s' expected to be equal '%s'.\nFile: %s, function: %s:%d",
+                    "'%s' expected to be equal '%s'.\nFile: %s:%d (%s)",
                     tostring(a),
                     tostring(b),
                     current_file,
-                    current_function,
-                    row()
+                    row(),
+                    current_function
                 )
             )
         end
@@ -92,6 +147,8 @@ function assert_equal(a, b, msg)
 end
 
 function assert_not_nil(a, msg)
+    a = flattensequence(a)
+
     if a == nil then
         if msg then
             print(msg)
@@ -105,6 +162,7 @@ function assert_not_nil(a, msg)
 end
 
 function assert_nil(a, msg)
+    a = flattensequence(a)
     if a ~= nil then
         if msg then
             print(msg)
@@ -118,6 +176,7 @@ function assert_nil(a, msg)
 end
 
 function assert_true(a, msg)
+    a = flattensequence(a)
     if a ~= true then
         if msg then
             print(format("In %s: %s", current_function, msg))
@@ -131,6 +190,7 @@ function assert_true(a, msg)
 end
 
 function assert_false(a, msg)
+    a = flattensequence(a)
     if a ~= false then
         if msg then
             print(msg)
