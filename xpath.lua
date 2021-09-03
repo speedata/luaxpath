@@ -88,6 +88,7 @@ local function doCompare(cmpfunc, a, b)
 
     local taba = {}
     local tabb = {}
+    if not a then return false end
     for i = 1, #a do
         taba[i] = tostring(a[i])
     end
@@ -1514,6 +1515,30 @@ local function fnNormalizeSpace(ctx, args)
     return str
 end
 
+local function fnNamespaceURI(ctx,args)
+    local arg
+
+    if #args == 0 then
+        arg = ctx.nn.current
+    else
+        arg = args[1](ctx)
+    end
+    if arg == nil then return "" end
+
+    while true do
+        if type(arg) == "table" and #arg == 1 and not arg[".__type"] then
+            arg = arg[1]
+        else
+            break
+        end
+    end
+    if type(arg) == "table" then
+        if arg[".__type"] == "element" then
+            return arg[".__namespace"]
+        end
+    end
+end
+
 local function fnNot(ctx,args)
     local arg1 = args[1](ctx)
     return not arg1
@@ -1602,6 +1627,7 @@ register("", "last", fnLast,0,0)
 register("", "local-name", fnLocalname,0,1)
 register("", "max",fnMax,1,1)
 register("", "min",fnMin,1,1)
+register("", "namespace-uri",fnNamespaceURI,0,1)
 register("", "not",fnNot)
 register("", "normalize-space", fnNormalizeSpace)
 register("", "number",fnNumber)
@@ -1656,8 +1682,10 @@ function NodeNavigator:attributes(name)
     name = name or "*"
     local attributes = {}
     local cur = self.current
+
     if type(cur) == "table" then
-        for attname, attvalue in pairs(cur.attributes) do
+        if cur[".__attributes"] == nil then return end
+        for attname, attvalue in pairs(cur[".__attributes"]) do
             if name ~= "*" and attname == name or name == "*" then
                 table.insert(attributes,setmetatable({[attname] = attvalue, [".__type"] = "attribute" },attmt))
             end

@@ -10,8 +10,14 @@ function stringreader.new(self,str)
     setmetatable(s, self)
     self.__index = self
     local tab = {}
-    for _,c in utf8.codes(str) do
-        table.insert(tab,utf8.char(c))
+    if utf8 then
+        for _,c in utf8.codes(str) do
+            table.insert(tab,utf8.char(c))
+        end
+    else
+        for i in string.utfcharacters(str) do
+                table.insert(tab,i)
+        end
     end
     s.tab = tab
 	return s

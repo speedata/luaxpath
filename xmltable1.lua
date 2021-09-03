@@ -7,7 +7,7 @@ xmldoctable1 = {
         [".__namespace"] = "",
         [".__ns"] = {
         },
-        attributes = { ["empty"] = "", ["quotationmarks"] = "\"text\"",  ["one"] = "1", ["foo"] = "no"},
+        [".__attributes"] = { ["empty"] = "", ["quotationmarks"] = "\"text\"",  ["one"] = "1", ["foo"] = "no"},
         [1] = "\n    ",
         [2] = {
             [".__name"] = "sub",
@@ -16,7 +16,7 @@ xmldoctable1 = {
             [".__namespace"] = "",
             [".__ns"] = {
             },
-            attributes = {["foo"] = "baz",someattr = "somevalue"},
+            [".__attributes"] = {["foo"] = "baz",someattr = "somevalue"},
             [1] = "123",
             },
         [3] = "\n    ",
@@ -27,7 +27,7 @@ xmldoctable1 = {
             [".__namespace"] = "",
             [".__ns"] = {
             },
-            attributes = { ["foo"] = "bar"},
+            [".__attributes"] = { ["foo"] = "bar"},
             [1] = "contents sub2",
         },
         [5] = "\n    ",
@@ -38,7 +38,7 @@ xmldoctable1 = {
             [".__namespace"] = "",
             [".__ns"] = {
             },
-            attributes = { ["foo"] = "bar"},
+            [".__attributes"] = { ["foo"] = "bar"},
             [1] = "contents sub3",
             [2] = {
                 [".__name"] = "subsub",
@@ -47,7 +47,7 @@ xmldoctable1 = {
                 [".__namespace"] = "",
                 [".__ns"] = {
                 },
-                attributes = { ["foo"] = "bar"},
+                [".__attributes"] = { ["foo"] = "bar"},
                 [1] = "contents subsub 1",
             },
         },
@@ -59,7 +59,7 @@ xmldoctable1 = {
             [".__namespace"] = "",
             [".__ns"] = {
             },
-            attributes = { ["foo"] = "barbaz"},
+            [".__attributes"] = { ["foo"] = "barbaz"},
             [1] = "contents other",
             [2] = {
                 [".__name"] = "subsub",
@@ -68,7 +68,7 @@ xmldoctable1 = {
                 [".__namespace"] = "",
                 [".__ns"] = {
                 },
-                attributes = { ["foo"] = "oof"},
+                [".__attributes"] = { ["foo"] = "oof"},
                 [1] = "contents subsub other",
             },
         },
@@ -80,7 +80,7 @@ xmldoctable1 = {
             [".__namespace"] = "",
             [".__ns"] = {
             },
-            attributes = { ["foo"] = "other2"},
+            [".__attributes"] = { ["foo"] = "other2"},
             [1] = "contents other",
             [2] = {
                 [".__name"] = "subsub",
@@ -89,7 +89,7 @@ xmldoctable1 = {
                 [".__namespace"] = "",
                 [".__ns"] = {
                 },
-                attributes = { ["foo"] = "subsub2"},
+                [".__attributes"] = { ["foo"] = "subsub2"},
                 [1] = "contents subsub other2",
             },
         },
