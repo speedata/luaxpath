@@ -2,27 +2,22 @@
 
 dofile("debug.lua")
 
-if disable_debug then
-    function enterStep() end
-    function leaveStep() end
-end
+function enterStep() end
+function leaveStep() end
 
-
+local xstring
 -- texlua has slnunicode, otherwise you should use lua-utf8 from luarocks
 if unicode and unicode.utf8 then
-    string = unicode.utf8
+    xstring = unicode.utf8
 else
     local utf8 = require 'lua-utf8'
     if utf8 then
-        local rep = string.rep
-        local format = string.format
-        string = utf8
-        string.rep = rep
-        string.format = format
+        xstring = utf8
+        xstring.format = string.format
     end
 end
 
-local match = string.match
+local match = xstring.match
 
 local stringreader = require("stringreader")
 local xpathfunctions = {}
@@ -31,7 +26,6 @@ local function register(ns, name, fun)
     xpathfunctions[ns] = xpathfunctions[ns] or {}
     xpathfunctions[ns][name] = fun
 end
-
 
 local function flattensequence(arg)
     local ret = {}
@@ -160,10 +154,10 @@ local function get_num(sr)
         end
     end
 
-    if not sr:eof() and string.lower(sr:peek()) == "e" then
+    if not sr:eof() and xstring.lower(sr:peek()) == "e" then
         table.insert(ret, "e")
         sr:getc()
-        if not sr:eof() and string.lower(sr:peek()) == "-" then table.insert(ret, "-") sr:getc() end
+        if not sr:eof() and xstring.lower(sr:peek()) == "-" then table.insert(ret, "-") sr:getc() end
 
         while true do
             if sr:eof() then
@@ -1164,9 +1158,9 @@ function parseFunctionCall(infotbl)
     infotbl.skip(")")
     local prefix = ""
     if match(fname, ":") then
-        local c = string.find(fname, ":")
-        prefix = string.sub(fname, 1, c - 1)
-        fname = string.sub(fname, c + 1, -1)
+        local c = xstring.find(fname, ":")
+        prefix = xstring.sub(fname, 1, c - 1)
+        fname = xstring.sub(fname, c + 1, -1)
     end
     leaveStep(infotbl, "48 parseFunctionCall")
     return function(ctx)
@@ -1300,7 +1294,7 @@ local function parse(str)
         local c2 = sr:peek(2)
         if match(c, "%a") then
             tok = get_word(sr)
-            if string.match(tok, ":") then
+            if xstring.match(tok, ":") then
                 table.insert(tokenlist, {TOK_QNAME, tok})
             else
                 table.insert(tokenlist, {TOK_NCNAME, tok})
@@ -1593,7 +1587,7 @@ end
 
 local function fnUpperCase(ctx,args)
     local str = get_string_argument(ctx,args,"upper-case")
-    return string.upper(str)
+    return xstring.upper(str)
 end
 
 register("", "abs", fnAbs)
@@ -1651,7 +1645,7 @@ end
 local attmt = {
     __tostring = function (tbl,idx)
         for k, v in pairs(tbl) do
-            if not string.match(k,"^.__") then
+            if not xstring.match(k,"^.__") then
                 return v
             end
         end
